@@ -22,3 +22,6 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# 本地备忘（不推送）
+git_push.md
