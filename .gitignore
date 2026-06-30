@@ -1,0 +1,24 @@
+# 模型权重（体积大，按 README 用 ModelScope 下载）
+models/Qwen3.5-9B/
+models/Qwen3-1.7B/
+models/siglip2-so400m-patch16-384/
+
+# 数据集与生成物
+data/COCO2017/
+data/qa/
+
+# 训练产物
+checkpoints/
+
+# 环境与缓存
+.pip-cache/
+wheels/
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
