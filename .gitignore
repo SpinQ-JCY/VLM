@@ -3,9 +3,8 @@ models/Qwen3.5-9B/
 models/Qwen3-1.7B/
 models/siglip2-so400m-patch16-384/
 
-# 数据集与生成物
+# 数据集
 data/COCO2014/
-data/qa/
 
 # 训练产物（仅推送 align / sft 最终 projector.pt）
 checkpoints/*
