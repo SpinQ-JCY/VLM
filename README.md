@@ -1,83 +1,106 @@
-# 自己训练一个视觉语言模型 VLM
+# VLM v1：自己训练一个视觉语言模型
 
-搭建一个能「看图回答问题」的视觉语言模型（VLM）。
+SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训练 Projector**。
 
-- 数据：COCO 图片
-- 标注：Qwen3.5-9B 自动生成问答
-- 模型：SigLIP + Projector + Qwen3-1.7B（VLM v1）
-- 流程：环境 → 数据 → vLLM部署 → 生成 QA → 设计 → 训练 → 测试
+两阶段：**align** 用 COCO-CN 中文描述做语义预热 → **sft** 用 Qwen3.5 生成的大规模问答做指令微调。**推理与 Web 演示请用 sft 权重**；align 数据少、问题单一，单独使用效果较差，主要供 sft 初始化。
 
 ---
 
-## Step 0：环境搭建
+## 整体流程（Step 0 → 7）
 
+```
+Step 0  环境          conda 环境 vlm + requirements.txt
+Step 1  数据          COCO2014 图片 + COCO-CN 标注  →  data/COCO2014/
+Step 2  vLLM          Qwen3.5-9B 服务                →  localhost:8033
+Step 3  训练数据      3.1 align 20,341 条 | 3.2 sft 165,566 条
+Step 4  模型架构      models/vlms/VLM_v1_model.py
+Step 5  训练          align → sft（仅更新 Projector）
+Step 6  命令行测试    scripts/step6_test_vlm_v1.py
+Step 7  Web 界面      web/server.py :7860
+```
 
-| 组件      | 版本                          |
-| ------- | --------------------------- |
-| Python  | 3.12                        |
-| CUDA    | 13.0（cu130）                 |
-| PyTorch | 2.11.0+cu130（由 vLLM 依赖自动安装） |
-| vLLM    | ≥ 0.8.5                     |
+---
 
+## 仓库结构（推送内容）
+
+```
+VLM/
+├── models/vlms/VLM_v1_model.py   # 模型定义
+├── models/demo/                  # 各组件 Demo
+├── utils/
+│   ├── step3_build_coco_cn_qa.py # Step 3.1
+│   ├── step3_generate_qa.py      # Step 3.2
+│   └── step5_train_logger.py
+├── scripts/
+│   ├── step5_train_vlm_v1.py     # Step 5
+│   └── step6_test_vlm_v1.py      # Step 6
+├── web/                          # Step 7
+├── requirements.txt
+└── README.md
+```
+
+不推送（见 `.gitignore`）：`models/*` 大模型权重、`data/`、`logs/`、中间 checkpoint（`projector_step_*.pt`）。
+
+**已随仓库提供**（clone 可直接推理）：
+
+| 文件 | 说明 |
+|------|------|
+| `checkpoints/VLM_v1_align/projector.pt` | align 阶段最终权重 |
+| `checkpoints/VLM_v1_sft/projector.pt` | sft 阶段最终权重（**推荐推理**） |
+
+QA 数据格式（两阶段相同）：
+
+```json
+{"image": "data/COCO2014/.../xxx.jpg", "question": "...", "answer": "..."}
+```
+
+---
+
+## Step 0：环境
+
+| 组件 | 版本 |
+|------|------|
+| Python | 3.12 |
+| CUDA | 13.0（cu130） |
+| PyTorch | 2.11.0+cu130 |
+| vLLM | ≥ 0.8.5 |
 
 ```bash
-conda create -n vlm python=3.12 -y
-conda activate vlm
+conda create -n vlm python=3.12 -y && conda activate vlm
+cd VLM
 pip config set global.cache-dir $(pwd)/.pip-cache
 pip install -r requirements.txt
 ```
 
-pip 缓存目录：`VLM/.pip-cache/`（数据盘，不占系统盘）
+---
 
-若 `numpy` 下载超时，单独下载后安装再继续：
+## Step 1：数据
 
-```bash
-mkdir -p wheels
-pip download numpy==2.3.5 -d wheels \
-  -i https://pypi.tuna.tsinghua.edu.cn/simple \
-  --python-version 3.12 --only-binary=:all:
-pip install wheels/numpy-*.whl
-pip install -r requirements.txt
-```
-
-验证：
+**1.1 COCO2014 图片** — [ModelScope 下载](https://www.modelscope.cn/datasets/OmniData/COCO_2014/tree/master/raw)
 
 ```bash
-python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+mkdir -p data/COCO2014/raw
+modelscope download --dataset OmniData/COCO_2014 raw/train2014.zip --local_dir data/COCO2014
+modelscope download --dataset OmniData/COCO_2014 raw/val2014.zip --local_dir data/COCO2014
+unzip data/COCO2014/raw/train2014.zip -d data/COCO2014
+unzip data/COCO2014/raw/val2014.zip -d data/COCO2014
 ```
 
-```
-2.11.0+cu130
-13.0
-True
-NVIDIA GeForce RTX 5090
+本地规模：`train2014` **82,783** 张 · `val2014` **40,504** 张。
+
+**1.2 COCO-CN 标注** — [HuggingFace](https://huggingface.co/datasets/AIMClab-RUC/COCO-CN)（慢可用 `HF_ENDPOINT=https://hf-mirror.com`）
+
+```bash
+wget -c -O data/COCO2014/coco-cn-version1805v1.1.tar.gz \
+  "https://huggingface.co/datasets/AIMClab-RUC/COCO-CN/resolve/main/coco-cn-version1805v1.1.tar.gz?download=true"
+tar -xzf data/COCO2014/coco-cn-version1805v1.1.tar.gz -C data/COCO2014
 ```
 
 ---
 
+## Step 2：vLLM（生成 sft 数据用）
 
-
-## Step 1：数据准备
-
-下载 [COCO2017 val2017.zip](https://www.modelscope.cn/datasets/PAI/COCO2017/files)：
-
-```bash
-mkdir -p data/COCO2017
-modelscope download --dataset PAI/COCO2017 val2017.zip --local_dir data/COCO2017
-unzip data/COCO2017/val2017.zip -d data/COCO2017
-```
-
-解压后 `data/COCO2017/val2017/` 共 **5000** 张图片。
-
----
-
-
-
-## Step 2：vLLM 部署 Qwen3.5-9B
-
-
-
-### 2.1 下载模型（第一次）
+**下载模型（首次）**
 
 ```bash
 mkdir -p models
@@ -86,258 +109,116 @@ modelscope download --model google/siglip2-so400m-patch16-384 --local_dir models
 modelscope download --model Qwen/Qwen3-1.7B --local_dir models/Qwen3-1.7B
 ```
 
+**5090 + FlashInfer（首次）**：安装 cu13 工具链并设 `CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13`；JIT 报错时 `rm -rf ~/.cache/flashinfer`。
 
-
-### 2.2 CUDA 配置（第一次，5090 + FlashInfer）
-
-```bash
-conda activate vlm
-
-pip install --force-reinstall --no-deps \
-  nvidia-cuda-nvcc==13.0.88 \
-  nvidia-cuda-crt==13.0.88 \
-  nvidia-nvvm==13.0.88 \
-  nvidia-cuda-cccl==13.0.85
-
-export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
-ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so
-```
-
-JIT 编译报错时执行：`rm -rf ~/.cache/flashinfer`
-
-### 2.3 启动服务（每次）
+**启动（每次 Step 3.2 前）**
 
 ```bash
-conda activate vlm
-cd /root/autodl-fs/VLM
-
+conda activate vlm && cd VLM
 export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
-export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
-
+export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
 vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3
 ```
 
+---
 
+## Step 3：构建训练数据
 
-### 2.4 测试
+### 3.1 align — `utils/step3_build_coco_cn_qa.py`
 
-curl 中 `model` 用本地路径 `models/Qwen3.5-9B`（与 `vllm serve` 一致）。默认关闭推理：`chat_template_kwargs.enable_thinking: false`。
+COCO-CN `#0` caption + 固定问题「请简要描述图片主要内容」→ `data/qa/coco_cn_qa.json`
 
 ```bash
-curl http://localhost:8033/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "models/Qwen3.5-9B",
-    "messages": [{"role":"user","content":"你好"}],
-    "temperature": 0.7,
-    "top_p": 0.8,
-    "top_k": 20,
-    "max_tokens": 2048,
-    "chat_template_kwargs": {"enable_thinking": false}
-  }'
+python utils/step3_build_coco_cn_qa.py
 ```
 
-测试脚本（`models/demo/`）：
+### 3.2 sft — `utils/step3_generate_qa.py`
+
+Qwen3.5 **看图**生成：每图 **2 问**（10 种描述问法随机 1 + 自拟细节问），答 ≤30/15 字 → `data/qa/coco_train_qa_qwen3.5.json`。支持断点续跑。
 
 ```bash
-cd /root/autodl-fs/VLM
-python models/demo/qwen3_5_9b.py   # 需先启动 2.3 服务
-python models/demo/qwen3_1_7b.py   # vLLM 占用 GPU 时需先停服务
-python models/demo/siglip2.py
+python utils/step3_generate_qa.py --num-images 10   # 试跑
+python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
+```
+
+生成完成后**停 vLLM**，再训练。
+
+### 数据对比
+
+| | align | sft |
+|---|-------|-----|
+| 文件 | `coco_cn_qa.json` | `coco_train_qa_qwen3.5.json` |
+| 条数 | 20,341 | 165,566 |
+| 图片 | 20,341（COCO-CN 子集） | 82,783（train 全量） |
+| 问答 | 1 固定问 + 人工 caption | 2 问/图，Qwen3.5 生成 |
+
+---
+
+## Step 4：架构
+
+| 模块 | 模型 | 训练 |
+|------|------|------|
+| Vision | SigLIP2-so400m | 冻结 |
+| Projector | 2×MLP | **训练** |
+| LLM | Qwen3-1.7B | 冻结 |
+
+`<image>` 占位符展开为 576 视觉 token，与文本拼接后送入 Qwen。验证：`python models/vlms/VLM_v1_model.py`
+
+---
+
+## Step 5：训练 — `scripts/step5_train_vlm_v1.py`
+
+prompt labels = `-100`，只对 answer 算 loss；`max_seq_len=704`（576 图 + 128 文本）。
+
+```bash
+conda activate vlm && cd VLM
+
+# align
+python scripts/step5_train_vlm_v1.py --phase align
+
+# sft（默认加载 align 的 projector.pt）
+python scripts/step5_train_vlm_v1.py --phase sft
+```
+
+| 阶段 | 数据 | 输出 |
+|------|------|------|
+| align | `data/qa/coco_cn_qa.json` | `checkpoints/VLM_v1_align/projector.pt` |
+| sft | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/VLM_v1_sft/projector.pt` |
+
+日志：`logs/VLM_v1_<phase>/train.log`、`loss.png`。全量 sft 可后台：
+
+```bash
+mkdir -p logs/VLM_v1_sft
+nohup python scripts/step5_train_vlm_v1.py --phase sft > logs/VLM_v1_sft/nohup.out 2>&1 &
 ```
 
 ---
 
-
-
-## Step 3：生成视觉问答数据
-
-用 Qwen3.5-9B（vLLM）对 COCO 图片自动生成问答，供后续训练 VLM 使用。
-
-### 3.1 问题模板
-
-`utils/question_templates.py` 定义 **6 类问题**，每类 **5 种问法**，生成时每张图每类 **随机选 1 种**：
-
-
-| category | category_name | 说明       |
-| -------- | ------------- | -------- |
-| 1        | 简要描述          | 图片主要内容   |
-| 2        | 主要对象          | 场景中的主要物体 |
-| 3        | 对象颜色          | 主要物体颜色   |
-| 4        | 对象动作          | 主要物体在做什么 |
-| 5        | 室内室外          | 室内 / 室外  |
-| 6        | 天气情况          | 图中天气     |
-
-
-每张图 → **6 条**问答；5000 张图 → **30000 条**。
-
-### 3.2 生成（需先启动 Step 2.3 服务）
+## Step 6：命令行测试 — `scripts/step6_test_vlm_v1.py`
 
 ```bash
-conda activate vlm
-cd /root/autodl-fs/VLM/utils
-
-# 测试 10 张
-python generate_qa.py --num-images 10
-
-# 全部 5000 张
-python generate_qa.py --num-images 0
-```
-
-默认输出：`data/qa/coco_val_qa.json`。每处理 **50 张**图片写入一次（`--batch-size` 可调）。**10 路并发**请求（`--workers 10`）。
-
-常用参数：
-
-```bash
-python generate_qa.py \
-  --num-images 0 \
-  --output ../data/qa/coco_val_qa.json \
-  --batch-size 50 \
-  --workers 10 \
-  --seed 42          # 固定随机问法，便于复现
-```
-
-
-
-### 3.3 输出格式
-
-每条 JSON 记录：
-
-```json
-{
-  "image": "data/COCO2017/val2017/000000000139.jpg",
-  "category": 1,
-  "category_name": "简要描述",
-  "question": "这张图片的核心内容是什么？请简要说明。",
-  "answer": "..."
-}
-```
-
-生成时使用 system prompt 约束模型 **简要回答、不过度解释**，并默认关闭推理模式。
-
----
-
-
-
-## Step 4：VLM v1 模型架构
-
-**目标**：让 Qwen3-1.7B 能「看图说话」——把 SigLIP 提取的视觉特征对齐到 LLM 的语义空间，再按问答格式生成回答。
-
-**整体流水线**（Step 0 → 6）：
-
-```
-环境 → COCO 图片 → vLLM 部署 Qwen3.5-9B → 自动生成 QA → 设计 VLM v1 → 训练 → 测试
-```
-
-**三模块**（代码：`models/vlms/VLM_v1_model.py`）：
-
-
-| 模块        | 模型             | 训练     | 作用                                        |
-| --------- | -------------- | ------ | ----------------------------------------- |
-| Vision    | SigLIP2-so400m | 冻结     | 384×384 图片 → 576 个 patch 特征 `(576, 1152)` |
-| Projector | 2 层 MLP + GELU | **训练** | `1152 → 2048`，对齐 Qwen 隐层维度                |
-| LLM       | Qwen3-1.7B     | 冻结     | 读 multimodal 序列，自回归生成 answer              |
-
-
-**图文怎么拼**：prompt 里放 1 个 `<image>` 占位符；forward 时将其展开为 **576 个视觉 token**，与文本 embedding 沿序列维拼接，再送入 Qwen。
-
-举例（假设 token 数）：
-
-```
-question = "这张图里有什么？"
-answer   = "图片中有一只猫和一张沙发。"
-
-text embed (28, 2048)
-  → [prefix 3] + [576 视觉 token] + [suffix 24]
-  → merged (603, 2048)  →  Qwen3  →  自回归生成 answer
-```
-
-验证架构（需 GPU，vLLM 占用时需先停服务）：
-
-```bash
-cd /root/autodl-fs/VLM
-python models/vlms/VLM_v1_model.py
+python scripts/step6_test_vlm_v1.py                                          # 默认 sft
+python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/VLM_v1_align/projector.pt  # 对比 align
 ```
 
 ---
 
-
-
-## Step 5：训练 VLM v1
-
-**训练策略**：
-
-- 数据：Step 3 生成的 `coco_val_qa.json`（5000 图 × 6 问 ≈ 30000 条）
-- 方式：SFT（instruction tuning），prompt 部分 labels 置 `-100`，只对 answer 算 loss
-- 序列上限：`max_seq_len = 704`（576 图 + 128 文本），answer 超长则截断
-- 只更新 Projector；Vision / LLM 权重不动
-
-默认只训练 **Projector**：
+## Step 7：Web 界面 — `web/server.py`
 
 ```bash
-conda activate vlm
-cd /root/autodl-fs/VLM
-
-# 小规模试跑
-python scripts/train_vlm_v1.py --max-samples 100 --epochs 1
-
-# 全量
-python scripts/train_vlm_v1.py --epochs 1 --batch-size 1 --grad-accum 4
+conda activate vlm && cd VLM/web
+python server.py
 ```
 
-常用参数：
+默认 `checkpoints/VLM_v1_sft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。
 
+**访问方式**
 
-| 参数              | 默认                   | 说明                                  |
-| --------------- | -------------------- | ----------------------------------- |
-| `--max-seq-len` | 704                  | 合并后最大序列长度（576 图 + 128 文本）           |
-| `--save-every`  | 1000                 | 每 N 次 optimizer step 存一次；`0` 仅结束时保存 |
-| `--output`      | `checkpoints/VLM_v1` | 输出目录                                |
-
-
-- 中间 checkpoint：`projector_step_1000.pt` …
-- 最终权重：`checkpoints/VLM_v1/projector.pt`
-
-序列长度分布可用 `python utils/analyze_seq_len.py` 查看。
+| 环境 | 做法 |
+|------|------|
+| 本机 / 公司局域网 | 终端打印 `192.168.x.x:7860`，发给同网同事 |
+| AutoDL（Docker） | `172.17.x.x` 是容器 IP，**不能**当局域网用；在控制台做 **7860 端口映射**，用平台外链分享 |
 
 ---
 
-
-
-## Step 6：测试 VLM v1
-
-训练完成后，用 `scripts/test_vlm_v1.py` 对固定图片列表做推理：每张图依次问 **6 类问题的第一种问法**（与 Step 3 问题模板一致）。
-
-默认测试列表（脚本内 `TEST_IMAGES`，可按需修改）：
-
-
-| 图片                                       |
-| ---------------------------------------- |
-| `data/COCO2017/val2017/000000000139.jpg` |
-| `data/COCO2017/val2017/000000000285.jpg` |
-| `data/COCO2017/val2017/000000000632.jpg` |
-
-
-```bash
-conda activate vlm
-cd /root/autodl-fs/VLM
-
-# 默认：TEST_IMAGES 全部图片 + 6 类问题
-python scripts/test_vlm_v1.py
-
-# 指定 checkpoint
-python scripts/test_vlm_v1.py --checkpoint checkpoints/VLM_v1/projector_step_1000.pt
-```
-
-常用参数：
-
-
-| 参数                 | 默认                                | 说明                        |
-| ------------------ | --------------------------------- | ------------------------- |
-| `--checkpoint`     | `checkpoints/VLM_v1/projector.pt` | projector 权重；`none` 表示不加载 |
-| `--max-new-tokens` | 128                               | 生成长度上限                    |
-
-
-需 GPU；vLLM 占用显存时需先停 Step 2.3 服务。
+> 以下命令若无特别说明，均在项目根目录 `VLM/` 下、已 `conda activate vlm` 后执行。

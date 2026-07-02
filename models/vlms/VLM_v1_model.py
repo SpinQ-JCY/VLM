@@ -14,6 +14,50 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE_TOKEN = "<image>"
 IGNORE_INDEX = -100
+DEFAULT_SYSTEM = "你是一个乐于助人的助手，可以根据图片内容回答问题。"
+MAX_TEXT_TOKENS = 128  # 与 MiniLlava 一致：整段文本（含 system / 问题 / answer / EOS）截断上限
+
+
+def build_train_prompt_text(system: str, question: str, im_end: str) -> str:
+    return (
+        f"<|im_start|>system\n{system}\n{im_end}\n"
+        f"<|im_start|>user\n{IMAGE_TOKEN}\n{question}\n{im_end}\n"
+        f"<|im_start|>assistant\n"
+    )
+
+
+def build_train_text(system: str, question: str, answer: str, im_end: str) -> str:
+    return build_train_prompt_text(system, question, im_end) + answer + im_end
+
+
+def encode_train_sample(
+    tokenizer: AutoTokenizer,
+    question: str,
+    answer: str,
+    max_text_tokens: int = MAX_TEXT_TOKENS,
+    system: str = DEFAULT_SYSTEM,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    im_end = tokenizer.eos_token
+    full_ids = tokenizer.encode(
+        build_train_text(system, question, answer, im_end),
+        max_length=max_text_tokens,
+        truncation=True,
+        add_special_tokens=False,
+    )
+    marker = tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
+    start = len(full_ids)
+    for i in range(len(full_ids) - len(marker), -1, -1):
+        if full_ids[i : i + len(marker)] == marker:
+            start = i + len(marker)
+            break
+
+    # 例：共 43 token（id 0–42），start=36（0–35 是 prompt，36–42 是 answer+EOS）
+    #     input_ids = [0, 1, 2, ..., 35, 36, 37, 38, 39, 40, 41, 42]
+    #     labels    = [-100, -100, ..., -100, 36, 37, 38, 39, 40, 41, 42]  后 7 个算 loss
+    input_ids = torch.tensor(full_ids, dtype=torch.long)
+    labels = torch.full_like(input_ids, IGNORE_INDEX)
+    labels[start:] = input_ids[start:]
+    return input_ids, labels
 
 
 @dataclass
@@ -47,12 +91,14 @@ class VLM_v1_Model(nn.Module):
     举例：question="这张图里有什么？"，answer="图片中有一只猫和一张沙发。"
 
         prompt 字符串（训练时拼接 answer 在后面）：
+            <|im_start|>system
+            {system}
             <|im_start|>user
             <image>
-            这张图里有什么？
-            
+            {question}
             <|im_start|>assistant
-            图片中有一只猫和一张沙发。
+            {answer}{eos}
+            （整段文本 truncate 至 128 token，再展开 <image>）
 
         ① 视觉路径
             pixel_values                 (1, 3, 384, 384)
@@ -93,8 +139,10 @@ class VLM_v1_Model(nn.Module):
 
         if self.config.freeze_vision:
             self.vision.requires_grad_(False)
+            self.vision.eval()
         if self.config.freeze_llm:
             self.llm.requires_grad_(False)
+            self.llm.eval()
 
     @property
     def device(self) -> torch.device:
@@ -109,13 +157,8 @@ class VLM_v1_Model(nn.Module):
         vision_out = self.vision(pixel_values=pixel_values).last_hidden_state
         return self.projector(vision_out)
 
-    def _build_prompt(self, question: str) -> str:
-        im_end = self._tokenizer.eos_token
-        return (
-            f"<|im_start|>user\n{IMAGE_TOKEN}\n{question}\n"
-            f"{im_end}\n"
-            f"<|im_start|>assistant\n"
-        )
+    def _build_prompt(self, question: str, system: str = DEFAULT_SYSTEM) -> str:
+        return build_train_prompt_text(system, question, self._tokenizer.eos_token)
 
     def _image_token_pos(self, ids: torch.Tensor) -> int:
         image_token_id = self._tokenizer.convert_tokens_to_ids(IMAGE_TOKEN)
@@ -173,6 +216,14 @@ class VLM_v1_Model(nn.Module):
             tokenizer.add_special_tokens({"additional_special_tokens": [IMAGE_TOKEN]})
             self.llm.resize_token_embeddings(len(tokenizer))
 
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self.config.freeze_vision:
+            self.vision.eval()
+        if self.config.freeze_llm:
+            self.llm.eval()
+        return self
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -207,6 +258,8 @@ class VLM_v1_Model(nn.Module):
             attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
             do_sample=False,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
             **kwargs,
         )
         new_ids = out_ids[0, prompt_len:] if out_ids.size(1) > prompt_len else out_ids[0]

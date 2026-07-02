@@ -4,11 +4,19 @@ models/Qwen3-1.7B/
 models/siglip2-so400m-patch16-384/
 
 # 数据集与生成物
-data/COCO2017/
+data/COCO2014/
 data/qa/
 
-# 训练产物
-checkpoints/
+# 训练产物（仅推送 align / sft 最终 projector.pt）
+checkpoints/*
+!checkpoints/VLM_v1_align/
+!checkpoints/VLM_v1_sft/
+checkpoints/VLM_v1_align/*
+!checkpoints/VLM_v1_align/projector.pt
+checkpoints/VLM_v1_sft/*
+!checkpoints/VLM_v1_sft/projector.pt
+logs/
+web/.sessions/
 
 # 环境与缓存
 .pip-cache/

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VLM v1 · 视觉问答</title>
+  <style>
+    :root {
+      --bg: #0f1419; --panel: #1a2332; --border: #2d3a4f; --text: #e7ecf3;
+      --muted: #8b9cb3; --accent: #3b82f6; --accent-hover: #2563eb;
+      --user: #1e3a5f; --bot: #1f2937; --ok: #22c55e; --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+    header { border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; background: var(--panel); }
+    header h1 { font-size: 1.15rem; font-weight: 600; }
+    .badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: #243044; color: var(--muted); }
+    .badge.ok { color: var(--ok); border: 1px solid #166534; }
+    main { max-width: 960px; margin: 0 auto; padding: 1.25rem; display: grid; gap: 1rem; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+    .dropzone { border: 2px dashed var(--border); border-radius: 10px; padding: 2rem 1rem; text-align: center; cursor: pointer; }
+    .dropzone.dragover { border-color: var(--accent); background: #1e2a3d; }
+    .dropzone p { color: var(--muted); margin-top: 0.5rem; font-size: 0.9rem; }
+    .preview-wrap { display: none; margin-top: 1rem; text-align: center; }
+    .preview-wrap.active { display: block; }
+    .preview-wrap img { max-width: 100%; max-height: min(480px, 50vh); border-radius: 8px; border: 1px solid var(--border); object-fit: contain; }
+    .preview-actions { margin-top: 0.75rem; }
+    button { border: none; border-radius: 8px; padding: 0.55rem 1rem; font-size: 0.9rem; cursor: pointer; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-secondary { background: #243044; color: var(--text); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .chat-log { min-height: 240px; max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding: 0.25rem; }
+    .msg { max-width: 88%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: var(--user); }
+    .msg.bot { align-self: flex-start; background: var(--bot); border: 1px solid var(--border); }
+    .msg.meta { align-self: center; max-width: 100%; background: transparent; color: var(--muted); font-size: 0.8rem; padding: 0; }
+    .input-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .input-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.85rem; color: var(--text); font-size: 0.95rem; }
+    .input-row input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    .hint { color: var(--muted); font-size: 0.82rem; margin-top: 0.5rem; }
+    .access-url { font-family: Consolas, monospace; font-size: 0.82rem; color: var(--ok); word-break: break-all; margin-top: 0.35rem; }
+    #fileInput { display: none; }
+    .loading { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>VLM v1 · 视觉问答</h1>
+      <div class="access-url" id="accessUrl"></div>
+    </div>
+    <div>
+      <span class="badge" id="deviceBadge">检测中…</span>
+      <span class="badge" id="sessionBadge">未上传图片</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <strong>上传图片</strong>
+      <div class="dropzone" id="dropzone">
+        <div>拖拽或点击选择图片</div>
+        <p>支持 JPG / PNG / WEBP</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" />
+      <div class="preview-wrap" id="previewWrap">
+        <img id="previewImg" alt="当前图片" />
+        <div class="preview-actions">
+          <button type="button" class="btn-secondary" id="changeImageBtn">换一张</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <strong>提问</strong>
+      <div class="chat-log" id="chatLog">
+        <div class="msg meta">上传图片后可提问。每次回答仅基于当前图片，无多轮上下文。</div>
+      </div>
+      <div class="input-row">
+        <input id="questionInput" type="text" placeholder="例如：请简要描述图片主要内容" disabled />
+        <button type="button" class="btn-primary" id="sendBtn" disabled>发送</button>
+      </div>
+      <p class="hint">Enter 发送 · 建议 sft 权重（checkpoints/VLM_v1_sft/projector.pt）</p>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const dropzone = $("dropzone"), fileInput = $("fileInput"), previewWrap = $("previewWrap");
+    const previewImg = $("previewImg"), changeImageBtn = $("changeImageBtn");
+    const questionInput = $("questionInput"), sendBtn = $("sendBtn"), chatLog = $("chatLog");
+    const sessionBadge = $("sessionBadge"), deviceBadge = $("deviceBadge");
+    let sessionId = null, busy = false;
+
+    async function checkHealth() {
+      try {
+        const data = await (await fetch("/health")).json();
+        deviceBadge.textContent = data.device || "就绪";
+        deviceBadge.classList.add("ok");
+        if (data.access_url) $("accessUrl").textContent = "内网访问：" + data.access_url;
+      } catch { deviceBadge.textContent = "服务未就绪"; }
+    }
+
+    function appendMsg(text, role) {
+      const el = document.createElement("div");
+      el.className = "msg " + role;
+      el.textContent = text;
+      chatLog.appendChild(el);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function setReady(ready) {
+      questionInput.disabled = sendBtn.disabled = !ready || busy;
+    }
+
+    async function uploadImage(file) {
+      if (!file?.type.startsWith("image/")) return alert("请选择图片");
+      const form = new FormData();
+      form.append("image", file);
+      if (sessionId) form.append("session_id", sessionId);
+      sessionBadge.textContent = "上传中…";
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: form });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "上传失败");
+        const data = await res.json();
+        sessionId = data.session_id;
+        previewImg.src = data.preview_url + "?t=" + Date.now();
+        previewWrap.classList.add("active");
+        dropzone.style.display = "none";
+        sessionBadge.textContent = "图片已就绪";
+        sessionBadge.classList.add("ok");
+        setReady(true);
+        appendMsg("已更新图片：" + (file.name || "新图片"), "meta");
+        questionInput.focus();
+      } catch (e) {
+        sessionBadge.textContent = "上传失败";
+        alert(e.message);
+      }
+    }
+
+    async function ask() {
+      const q = questionInput.value.trim();
+      if (!q || !sessionId || busy) return;
+      busy = true; setReady(true);
+      appendMsg(q, "user");
+      questionInput.value = "";
+      const loading = document.createElement("div");
+      loading.className = "msg bot loading";
+      loading.textContent = "生成中…";
+      chatLog.appendChild(loading);
+      try {
+        const form = new FormData();
+        form.append("session_id", sessionId);
+        form.append("question", q);
+        const res = await fetch("/api/ask", { method: "POST", body: form });
+        loading.remove();
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "请求失败");
+        appendMsg((await res.json()).answer, "bot");
+      } catch (e) {
+        loading.remove();
+        appendMsg("错误：" + e.message, "bot");
+      } finally { busy = false; setReady(true); }
+    }
+
+    dropzone.onclick = () => fileInput.click();
+    changeImageBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => { if (e.target.files[0]) uploadImage(e.target.files[0]); fileInput.value = ""; };
+    ["dragenter", "dragover"].forEach((ev) => dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("dragover"); }));
+    ["dragleave", "drop"].forEach((ev) => dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("dragover"); }));
+    dropzone.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) uploadImage(e.dataTransfer.files[0]); });
+    sendBtn.onclick = ask;
+    questionInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
+    checkHealth();
+  </script>
+</body>
+</html>
