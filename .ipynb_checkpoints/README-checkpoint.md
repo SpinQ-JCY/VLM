@@ -6,21 +6,18 @@ SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训
 
 ---
 
-## 整体流程（Step 0 → 8）
+## 整体流程（Step 0 → 7）
 
-
-| 步骤  | 环节         | 内容                                     |
-| --- | ---------- | -------------------------------------- |
-| 0   | 环境         | 安装 conda 环境与 Python 依赖                 |
-| 1   | 数据         | 下载 COCO 图片与 COCO-CN 中文标注               |
-| 2   | vLLM 与模型准备 | 下载各模型权重，启动 Qwen3.5 推理服务                |
-| 3   | 训练数据       | 构建对齐与 SFT 问答数据（仓库已附带，可跳过）              |
-| 4   | 模型架构       | 定义 SigLIP + Projector + Qwen 组合结构      |
-| 5   | 训练         | 两阶段训练 Projector（align 语义对齐 → sft 指令微调） |
-| 6   | 命令行测试      | 抽样图片做看图问答冒烟测试                          |
-| 7   | Web 界面     | 浏览器上传图片、在线逐条提问                         |
-| 8   | 模型评估       | 抽图清单（一次）→ Qwen3.5 出题与裁判，量化 align / sft |
-
+```
+Step 0  环境          conda 环境 vlm + requirements.txt
+Step 1  数据          COCO2014 图片 + COCO-CN 标注  →  data/COCO2014/
+Step 2  vLLM与模型准备  下载权重 + 启动 Qwen3.5-9B  →  localhost:8033
+Step 3  训练数据      仓库已带 QA；可选重跑 3.1/3.2 覆盖 data/qa/
+Step 4  模型架构      models/vlms/VLM_v1_model.py
+Step 5  训练          align → sft（仅更新 Projector）
+Step 6  命令行测试    scripts/step6_test_vlm_v1.py
+Step 7  Web 界面      web/server.py
+```
 
 ---
 
@@ -36,7 +33,6 @@ VLM/
 ├── utils/                     # 数据构建、训练日志（Step 3、5）
 ├── scripts/                   # 训练与测试（Step 5、6）
 ├── web/                       # Web 界面（Step 7）
-├── eval/                      # 模型评估（Step 8）
 ├── checkpoints/               # align / sft 的 projector.pt
 └── requirements.txt
 ```
@@ -167,12 +163,8 @@ export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
 export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
 
-vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
-  --max-model-len 4096 \
-  --gpu-memory-utilization 0.80
+vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3
 ```
-
-看图出题 / 评测的图文 prompt 很短，无需模型默认的 262144 上下文；加上 `--max-model-len 4096` 可大幅减小 KV cache，避免在较低 `gpu-memory-utilization` 下启动失败。
 
 **测试**
 
@@ -355,8 +347,6 @@ python scripts/step6_test_vlm_v1.py                                             
 python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/VLM_v1_align/projector.pt  # 对比 align
 ```
 
-VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 **5.4GB** 显存；vLLM 占用 GPU 时需先停服务。
-
 ---
 
 
@@ -368,7 +358,7 @@ conda activate vlm && cd VLM/web
 python server.py
 ```
 
-默认 `checkpoints/VLM_v1_sft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。推理显存约 **5.4GB**（同 Step 6）。
+默认 `checkpoints/VLM_v1_sft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。
 
 **访问方式**
 
@@ -378,99 +368,6 @@ python server.py
 | 本机 / 公司局域网     | 终端打印 `192.168.x.x:7860`，发给同网同事                              |
 | AutoDL（Docker） | `172.17.x.x` 是容器 IP，**不能**当局域网用；在控制台做 **7860 端口映射**，用平台外链分享 |
 
-
----
-
-
-
-## Step 8：模型评估
-
-用 **Qwen3.5-9B** 作出题人与裁判，在验证集上量化 VLM 质量。**图片抽样（8.0）只需运行一次**，写入 `step8_0_images.json`；后续 8.1 / 8.2 / 8.3 均从 JSON 加载，支持断点续跑。
-
-
-| 步骤  | 内容                  | 输出                                                   |
-| --- | ------------------- | ---------------------------------------------------- |
-| 8.0 | 随机抽取测评图片（**仅一次**）   | eval/outputs/step8_0_images.json                     |
-| 8.1 | Qwen3.5 看图出题 + 参考答案 | eval/outputs/step8_1_benchmark.json                  |
-| 8.2 | VLM 逐条回答（每题单独推理）    | eval/outputs/step8_2_vlm_answers_{权重名}.json          |
-| 8.3 | Qwen3.5 看图裁判打分      | eval/outputs/step8_3_scores_{权重名}.json（由 8.2 路径自动推导） |
-
-
-**题型与训练阶段对应**
-
-
-| type     | 含义          | 测评目标             |
-| -------- | ----------- | ---------------- |
-| `scene`  | 描述图片主要内容    | **align** 语义对齐得分 |
-| `detail` | 针对图片细节的自拟问答 | **sft** 指令微调得分   |
-
-
-默认从 `val2014` 随机抽 **200** 张写入 8.0 清单，每张 2 题，共 400 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
-
-**前置**
-
-- Step 8.0：仅需本地验证集图片，无需 GPU / vLLM
-- Step 8.1 / 8.3：需 vLLM 服务（同 Step 2）
-- Step 8.2：需 GPU；VLM_v1 单卡推理约 **5.4GB** 显存（bf16、batch=1）；须先停 vLLM 释放显存
-
-```bash
-conda activate vlm && cd VLM
-
-# 8.0 随机抽图（仅首次或需重抽时运行）
-python eval/step8_0_sample_images.py --num-images 200 --seed 42
-
-# 启动 Qwen3.5（8.1 / 8.3 用）
-export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
-export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
-
-vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
-  --max-model-len 4096 \
-  --gpu-memory-utilization 0.8
-
-# 8.1 生成基准问答（从 step8_0_images.json 读图）
-python eval/step8_1_generate_benchmark.py
-
-# 停 vLLM 后 8.2：VLM 逐条回答
-python eval/step8_2_vlm_answer.py --checkpoint checkpoints/VLM_v1_sft/projector.pt
-
-# 重启 vLLM（export 同上，再执行 vllm serve）后 8.3：裁判打分（--output 默认随 --input 推导）
-python eval/step8_3_judge_scores.py \
-  --input eval/outputs/step8_2_vlm_answers_VLM_v1_sft.json
-```
-
-`--gpu-memory-utilization 0.8` 约预留 **5.4GB** 给 Step 8.2 VLM_v1 推理。
-
-**评分标准**（五维度，每维 **0–20** 分，单题满分 **100**；从严给分）
-
-**scene（align）**
-
-
-| 维度        | 说明                        |
-| --------- | ------------------------- |
-| 主要语义准确性   | 画面核心主题（何处、何人/何物、在做什么）是否正确 |
-| 关键元素覆盖    | 是否覆盖图中多个关键可见元素，无明显遗漏      |
-| 参考答案语义一致  | 与参考答案核心语义是否等价或高度一致        |
-| 事实忠实（无幻觉） | 陈述是否均可从图中验证，无编造           |
-| 表达质量      | 中文是否通顺、描述是否清晰             |
-
-
-**detail（sft）**
-
-
-| 维度        | 说明                  |
-| --------- | ------------------- |
-| 事实正确性     | 答案事实是否与图中完全一致       |
-| 答所问       | 是否正面、直接回答所问问题       |
-| 参考答案语义一致  | 与参考答案语义是否等价（允许措辞不同） |
-| 事实忠实（无幻觉） | 是否无图中不存在的信息         |
-| 简洁规范      | 是否简短直接，符合细节问答长度预期   |
-
-
-各维度分档：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
-
-Step 8.3 结束后终端与对应 `step8_3_scores_*.json` 的 `meta.summary` 会输出 `align_scene`、`sft_detail`、`overall` 均分及各维度均分。
 
 ---
 
