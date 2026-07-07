@@ -390,12 +390,6 @@ python scripts/step5_train_instructft_lora.py
 ```
 
 
-| 输出           | 路径                                                                 |
-| ------------ | ------------------------------------------------------------------ |
-| Projector    | 训练结束 `projector.pt`；每 1000 step 另存 `projector_step_{N}.pt`          |
-| LoRA adapter | 训练结束 `lora/`；每 1000 step 另存 `lora_step_{N}/`（与 projector 步数成对） |
-
-
 **训练 loss 曲线**
 
 <p align="center">
