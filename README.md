@@ -28,7 +28,9 @@
 
 ```
 VLM/
-├── data/qa/                              # 训练问答 JSON
+├── data/
+│   ├── qa/                               # 训练问答 JSON
+│   └── test_imgs/                        # Step 6 冒烟测试图片
 ├── models/
 │   ├── vlms/                             # VLM 定义
 │   └── demo/                             # 各组件单独验证

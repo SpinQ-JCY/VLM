@@ -20,8 +20,8 @@ DEFAULT_LORA = ROOT / "checkpoints/instructft_lora/lora"
 
 TEST_QUESTIONS = ["请简要描述图片主要内容"]
 TEST_IMAGES = [
-    "data/COCO2014/val2014/COCO_val2014_000000000139.jpg",
-    "data/COCO2014/val2014/COCO_val2014_000000000285.jpg",
+    "data/test_imgs/img1.jpg",
+    "data/test_imgs/img2.jpg",
 ]
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -9,6 +10,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer, SiglipVisionModel
+from transformers import logging as transformers_logging
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +18,17 @@ IMAGE_TOKEN = "<image>"
 IGNORE_INDEX = -100
 DEFAULT_SYSTEM = "你是一个乐于助人的助手，可以根据图片内容回答问题。"
 MAX_TEXT_TOKENS = 128  # 与 MiniLlava 一致：整段文本（含 system / 问题 / answer / EOS）截断上限
+
+
+@contextmanager
+def suppress_load_report():
+    """保留权重加载进度条，仅抑制 transformers 的 LOAD REPORT（UNEXPECTED keys 等 warning）。"""
+    old_verbosity = transformers_logging.get_verbosity()
+    transformers_logging.set_verbosity_error()
+    try:
+        yield
+    finally:
+        transformers_logging.set_verbosity(old_verbosity)
 
 
 def build_train_prompt_text(system: str, question: str, im_end: str) -> str:
@@ -138,14 +151,15 @@ class VLM_v1_Model(nn.Module):
         self.config = VLM_v1_Config()
         self._tokenizer: AutoTokenizer | None = None
 
-        self.vision = SiglipVisionModel.from_pretrained(
-            self.config.siglip_path,
-            torch_dtype=torch.bfloat16,
-        )
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            self.config.qwen_path,
-            torch_dtype=torch.bfloat16,
-        )
+        with suppress_load_report():
+            self.vision = SiglipVisionModel.from_pretrained(
+                self.config.siglip_path,
+                torch_dtype=torch.bfloat16,
+            )
+            self.llm = AutoModelForCausalLM.from_pretrained(
+                self.config.qwen_path,
+                torch_dtype=torch.bfloat16,
+            )
         self.projector = VLM_v1_Projector(self.config.vision_hidden, self.config.llm_hidden)
         self.projector.to(dtype=self.llm.dtype)
 
@@ -293,8 +307,9 @@ class VLM_v1_Model(nn.Module):
 
 def load_VLM_v1(device: str = "cuda") -> tuple[VLM_v1_Model, AutoTokenizer]:
     """加载 VLM v1 模型与 tokenizer。"""
-    model = VLM_v1_Model().to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model.config.qwen_path)
+    with suppress_load_report():
+        model = VLM_v1_Model().to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model.config.qwen_path)
     model.bind_tokenizer(tokenizer)
     return model, tokenizer
 
@@ -302,7 +317,8 @@ def load_VLM_v1(device: str = "cuda") -> tuple[VLM_v1_Model, AutoTokenizer]:
 def load_VLM_v1_image_processor():
     """SigLIP 图像预处理（与 vision tower 配套）。"""
     cfg = VLM_v1_Config()
-    return AutoProcessor.from_pretrained(cfg.siglip_path)
+    with suppress_load_report():
+        return AutoProcessor.from_pretrained(cfg.siglip_path)
 
 
 if __name__ == "__main__":

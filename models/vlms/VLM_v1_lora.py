@@ -9,7 +9,7 @@ import torch.nn as nn
 from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import AutoTokenizer
 
-from models.vlms.VLM_v1_model import VLM_v1_Model, load_VLM_v1
+from models.vlms.VLM_v1_model import VLM_v1_Model, load_VLM_v1, suppress_load_report
 
 LORA_RANK = 16
 LORA_ALPHA = 32
@@ -87,6 +87,7 @@ def load_for_inference(
     model, tokenizer = load_VLM_v1(device=device)
     state = torch.load(Path(projector), map_location=device, weights_only=True)
     model.projector.load_state_dict(state)
-    model.llm = PeftModel.from_pretrained(model.llm, str(lora_dir))
+    with suppress_load_report():
+        model.llm = PeftModel.from_pretrained(model.llm, str(lora_dir))
     model.eval()
     return model, tokenizer
