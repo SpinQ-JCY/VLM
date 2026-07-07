@@ -372,19 +372,12 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 
 **训练 loss 曲线**
 
-左 Align、右 InstructFT，注意两图横纵坐标尺度不同。
+上 Align、下 InstructFT，注意两图横纵坐标尺度不同。
 
-<table>
-  <tr>
-    <td width="50%" align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
-    <td width="50%" align="center"><img src="logs/instructft/loss.png" width="95%"></td>
-  </tr>
-</table>
-
-```bash
-mkdir -p logs/instructft
-nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/nohup.out 2>&1 &
-```
+<p align="center">
+  <img src="logs/semantic_align/loss.png" alt="Align loss" width="80%"><br>
+  <img src="logs/instructft/loss.png" alt="InstructFT loss" width="80%">
+</p>
 
 
 
