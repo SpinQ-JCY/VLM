@@ -348,30 +348,36 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 ```
 
 
-| 阶段              | 说明                  | 数据                                   | 输出                                        |
-| --------------- | ------------------- | ------------------------------------ | ----------------------------------------- |
-| Align 语义对齐      | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json`            | `checkpoints/semantic_align/projector.pt` |
-| InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答    | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt`     |
+<table>
+  <tr>
+    <th width="25%">阶段</th>
+    <th width="25%">说明</th>
+    <th width="25%">数据</th>
+    <th width="25%">输出</th>
+  </tr>
+  <tr>
+    <td>Align 语义对齐</td>
+    <td>COCO-CN 描述对齐视觉与语言空间</td>
+    <td><code>data/qa/coco_cn_qa.json</code></td>
+    <td><code>checkpoints/semantic_align/projector.pt</code></td>
+  </tr>
+  <tr>
+    <td>InstructFT 指令微调</td>
+    <td>多类视觉问答，学会按问题类型回答</td>
+    <td><code>data/qa/coco_train_qa_qwen3.5.json</code></td>
+    <td><code>checkpoints/instructft/projector.pt</code></td>
+  </tr>
+</table>
 
 
 **训练 loss 曲线**
 
-两图横轴均为 Batch，纵轴均为每 100 batch 的平均 loss；因数据量与 loss 尺度不同，坐标范围不一致，不宜横向对比，仅供各阶段内部观察收敛趋势。
+左 Align、右 InstructFT，注意两图横纵坐标尺度不同。
 
 <table>
   <tr>
-    <td width="50%" align="center">
-      Align 语义对齐<br>
-      <sub>横轴约 0–1.2 万 batch · 纵轴 loss 约 2.5–7.0</sub>
-    </td>
-    <td width="50%" align="center">
-      InstructFT 指令微调<br>
-      <sub>横轴约 0–12 万 batch · 纵轴 loss 约 0.9–3.1</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
-    <td align="center"><img src="logs/instructft/loss.png" width="95%"></td>
+    <td width="50%" align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
+    <td width="50%" align="center"><img src="logs/instructft/loss.png" width="95%"></td>
   </tr>
 </table>
 
@@ -384,7 +390,7 @@ nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/
 
 ### Step 5b：InstructFT + LoRA（可选）
 
-在 Align projector 基础上，用 InstructFT 数据联合训练 Projector + Qwen attention LoRA（rank=16，运行时挂 adapter，不 merge）。
+在 Align projector 基础上，用 InstructFT 数据联合训练 Projector + Qwen attention LoRA。
 
 ```bash
 python scripts/step5_train_instructft_lora.py
