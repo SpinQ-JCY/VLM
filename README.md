@@ -1,10 +1,10 @@
 # VLM v1：自己训练一个视觉语言模型
 
-SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训练 Projector**。
+**视频讲解**：[哔哩哔哩 · 本项目完整流程讲解](https://www.bilibili.com/video/BV1ktTy67Eqx)
 
-两阶段：**Align 语义对齐**（COCO-CN 中文描述预热）→ **InstructFT 指令微调**（Qwen3.5 生成的大规模视觉问答）。**推理与 Web 演示请用 InstructFT 权重**；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
-
-![VLM v1 Web 演示](web/demo.png)
+<p align="center">
+  <img src="web/demo.png" alt="VLM v1 Web 演示" width="80%">
+</p>
 
 ---
 
@@ -264,6 +264,8 @@ python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 
 ## Step 4：架构
 
+SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训练 Projector**。
+
 
 | 模块        | 模型             | 训练     |
 | --------- | -------------- | ------ |
@@ -322,6 +324,8 @@ prompt（训练时 answer 接在后面，truncate 至 128 token）：
 
 
 ## Step 5：训练
+
+两阶段：**Align 语义对齐**（COCO-CN 中文描述预热）→ **InstructFT 指令微调**（Qwen3.5 生成的大规模视觉问答）。**推理与 Web 演示请用 InstructFT 权重**；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
 
 prompt labels = `-100`，只对 answer 算 loss；`max_seq_len=704`（576 图 + 128 文本）。
 
