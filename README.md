@@ -2,6 +2,10 @@
 
 视频讲解：[哔哩哔哩 · 本项目完整流程](https://www.bilibili.com/video/BV1ktTy67Eqx)
 
+<p align="center">
+  <img src="web/demo.png" alt="VLM v1 Web 演示" width="80%">
+</p>
+
 ---
 
 ## 整体流程（Step 0 → 8）
@@ -354,12 +358,22 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 
 两图横轴均为 Batch，纵轴均为每 100 batch 的平均 loss；因数据量与 loss 尺度不同，坐标范围不一致，不宜横向对比，仅供各阶段内部观察收敛趋势。
 
-
-|                                                  |                                                      |
-| ------------------------------------------------ | ---------------------------------------------------- |
-| Align 语义对齐 横轴约 0–1.2 万 batch · 纵轴 loss 约 2.5–7.0 | InstructFT 指令微调 横轴约 0–12 万 batch · 纵轴 loss 约 0.9–3.1 |
-|                                                  |                                                      |
-
+<table>
+  <tr>
+    <td width="50%" align="center">
+      Align 语义对齐<br>
+      <sub>横轴约 0–1.2 万 batch · 纵轴 loss 约 2.5–7.0</sub>
+    </td>
+    <td width="50%" align="center">
+      InstructFT 指令微调<br>
+      <sub>横轴约 0–12 万 batch · 纵轴 loss 约 0.9–3.1</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
+    <td align="center"><img src="logs/instructft/loss.png" width="95%"></td>
+  </tr>
+</table>
 
 ```bash
 mkdir -p logs/instructft
@@ -384,6 +398,10 @@ python scripts/step5_train_instructft_lora.py
 
 
 **训练 loss 曲线**
+
+<p align="center">
+  <img src="logs/instructft_lora/loss.png" alt="InstructFT + LoRA loss" width="80%">
+</p>
 
 ---
 
