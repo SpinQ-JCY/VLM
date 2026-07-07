@@ -151,6 +151,7 @@ pip install --force-reinstall --no-deps \
   nvidia-nvvm==13.0.88 \
   nvidia-cuda-cccl==13.0.85
 
+# 报错 RuntimeError: FlashInfer requires GPUs with sm75 or higher 的解决方案（cuda13.0版本的错误）
 export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
 ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so
 ```
@@ -160,19 +161,20 @@ JIT 编译报错时：`rm -rf ~/.cache/flashinfer`
 **启动（每次 Step 3.2 前）**
 
 ```bash
-conda activate vlm && cd VLM
+conda activate vlm
 
 export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
 export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
+ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so
 
 vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
-  --max-model-len 4096 \
+  --max-model-len 2048 \
   --gpu-memory-utilization 0.80
 ```
 
-看图出题 / 评测的图文 prompt 很短，无需模型默认的 262144 上下文；加上 `--max-model-len 4096` 可大幅减小 KV cache，避免在较低 `gpu-memory-utilization` 下启动失败。
+看图出题 / 评测的图文 prompt 很短，无需模型默认的 262144 上下文；加上 `--max-model-len 2048` 可大幅减小 KV cache，避免在较低 `gpu-memory-utilization` 下启动失败。
 
 **测试**
 
@@ -211,7 +213,7 @@ python models/demo/siglip2.py
 
 仓库已附带 `data/qa/` 下两份 JSON，**可直接 Step 5 训练**。仅当需要重新生成或修改问法时再跑本节。
 
-### 3.1 align — `utils/step3_build_coco_cn_qa.py`
+### 3.1 构建语义对齐训练数据
 
 COCO-CN `#0` caption + 固定问题「请简要描述图片主要内容」→ `data/qa/coco_cn_qa.json`
 
@@ -231,11 +233,12 @@ python utils/step3_build_coco_cn_qa.py
 
 
 
-### 3.2 sft — `utils/step3_generate_qa.py`
+### 3.2 构建指令微调训练数据
 
-Qwen3.5 **看图**生成：每图 **2 问**（10 种描述问法随机 1 + 自拟细节问），答 ≤30/15 字 → `data/qa/coco_train_qa_qwen3.5.json`。支持断点续跑。
+Qwen3.5 **看图**生成：每图 **2 问**（10 种描述问法随机 1 + 自拟细节问），生成`data/qa/coco_train_qa_qwen3.5.json`。
 
 ```bash
+# 需要提前用vLLM启动qwen3.5-9B
 python utils/step3_generate_qa.py --num-images 10   # 试跑
 python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 ```
@@ -245,7 +248,7 @@ python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 ### 数据对比
 
 
-|     | align              | sft                          |
+|     | 语义对齐               | 指令微调                         |
 | --- | ------------------ | ---------------------------- |
 | 文件  | `coco_cn_qa.json`  | `coco_train_qa_qwen3.5.json` |
 | 条数  | 20,341             | 165,566                      |
@@ -321,7 +324,7 @@ prompt（训练时 answer 接在后面，truncate 至 128 token）：
 prompt labels = `-100`，只对 answer 算 loss；`max_seq_len=704`（576 图 + 128 文本）。
 
 ```bash
-conda activate vlm && cd VLM
+conda activate vlm
 
 # align
 python scripts/step5_train_vlm_v1.py --phase align
@@ -405,7 +408,7 @@ python server.py
 | `detail` | 针对图片细节的自拟问答 | **sft** 指令微调得分   |
 
 
-默认从 `val2014` 随机抽 **200** 张写入 8.0 清单，每张 2 题，共 400 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
+默认从 `val2014` 随机抽 **50** 张写入 8.0 清单，每张 2 题，共 100 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
 
 **前置**
 
@@ -414,10 +417,10 @@ python server.py
 - Step 8.2：需 GPU；VLM_v1 单卡推理约 **5.4GB** 显存（bf16、batch=1）；须先停 vLLM 释放显存
 
 ```bash
-conda activate vlm && cd VLM
+conda activate vlm
 
 # 8.0 随机抽图（仅首次或需重抽时运行）
-python eval/step8_0_sample_images.py --num-images 200 --seed 42
+python eval/step8_0_sample_images.py --seed 42
 
 # 启动 Qwen3.5（8.1 / 8.3 用）
 export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
@@ -426,7 +429,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
 export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
 
 vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
-  --max-model-len 4096 \
+  --max-model-len 2048 \
   --gpu-memory-utilization 0.8
 
 # 8.1 生成基准问答（从 step8_0_images.json 读图）
@@ -435,9 +438,10 @@ python eval/step8_1_generate_benchmark.py
 # 停 vLLM 后 8.2：VLM 逐条回答
 python eval/step8_2_vlm_answer.py --checkpoint checkpoints/VLM_v1_sft/projector.pt
 
-# 重启 vLLM（export 同上，再执行 vllm serve）后 8.3：裁判打分（--output 默认随 --input 推导）
+# 重启 vLLM（export 同上，再执行 vllm serve）后 8.3：裁判打分（--force 覆盖上一次的打分）
 python eval/step8_3_judge_scores.py \
-  --input eval/outputs/step8_2_vlm_answers_VLM_v1_sft.json
+  --input eval/outputs/step8_2_vlm_answers_VLM_v1_sft.json \
+  --force
 ```
 
 `--gpu-memory-utilization 0.8` 约预留 **5.4GB** 给 Step 8.2 VLM_v1 推理。
@@ -468,7 +472,7 @@ python eval/step8_3_judge_scores.py \
 | 简洁规范      | 是否简短直接，符合细节问答长度预期   |
 
 
-各维度分档：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
+各维度须为 **0–20 任意整数**（如 7、11、14、17），按实际表现细粒度给分，禁止机械套用 0/10/20 锚点。分档参考：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
 
 Step 8.3 结束后终端与对应 `step8_3_scores_*.json` 的 `meta.summary` 会输出 `align_scene`、`sft_detail`、`overall` 均分及各维度均分。
 

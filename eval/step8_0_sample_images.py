@@ -14,7 +14,14 @@ from pathlib import Path
 EVAL_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(EVAL_DIR))
 
-from step8_common import DEFAULT_VAL_DIR, ROOT, STEP8_0_OUTPUT, load_json, save_json
+from step8_common import (
+    DEFAULT_NUM_EVAL_IMAGES,
+    DEFAULT_VAL_DIR,
+    ROOT,
+    STEP8_0_OUTPUT,
+    load_json,
+    save_json,
+)
 
 
 def sample_image_paths(
@@ -37,7 +44,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Step 8.0：随机抽样测评图片清单（仅运行一次）")
     parser.add_argument("--image-dir", type=Path, default=DEFAULT_VAL_DIR)
     parser.add_argument("--output", type=Path, default=STEP8_0_OUTPUT)
-    parser.add_argument("--num-images", type=int, default=100, help="随机抽样张数，0=全部")
+    parser.add_argument(
+        "--num-images",
+        type=int,
+        default=DEFAULT_NUM_EVAL_IMAGES,
+        help="随机抽样张数，0=全部",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--force",

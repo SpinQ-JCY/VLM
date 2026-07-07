@@ -121,7 +121,7 @@ def main() -> None:
     parser.add_argument("--host", default=DEFAULT_VLLM_HOST)
     parser.add_argument("--model", default=DEFAULT_VLLM_MODEL)
     parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--save-every", type=int, default=20, help="每完成 N 张图写入一次")
+    parser.add_argument("--save-every", type=int, default=10, help="每完成 N 张图写入一次")
     parser.add_argument("--seed", type=int, default=42, help="随机选描述类问题的种子")
     args = parser.parse_args()
 
