@@ -123,7 +123,7 @@ wget -c -O data/COCO2014/coco-cn-version1805v1.1.tar.gz \
 tar -xzf data/COCO2014/coco-cn-version1805v1.1.tar.gz -C data/COCO2014
 ```
 
-若 HuggingFace 下载慢，可改用 [hf-mirror](https://hf-mirror.com)：
+若 HuggingFace 下载慢，可改用 hf-mirror：
 
 ```bash
 wget -c -O data/COCO2014/coco-cn-version1805v1.1.tar.gz \
