@@ -51,7 +51,7 @@ SCORE_TOTAL_MAX = SCORE_DIM_MAX * SCORE_DIM_COUNT
 STEP8_0_OUTPUT = DEFAULT_OUTPUT_DIR / "step8_0_images.json"
 STEP8_1_OUTPUT = DEFAULT_OUTPUT_DIR / "step8_1_benchmark.json"
 DEFAULT_CHECKPOINT = ROOT / "checkpoints/instructft/projector.pt"
-STEP8_2_PREFIX = "step8_2_vlm_answers"
+STEP8_2_PREFIX = "step8_2_answers"
 STEP8_3_PREFIX = "step8_3_scores"
 
 
@@ -85,7 +85,7 @@ def checkpoint_weight_tag(checkpoint: Path | str) -> str:
     """从权重路径提取标签。
 
     checkpoints/instructft/projector.pt              → instructft
-    checkpoints/instructft/projector_step_3000.pt    → instructft_projector_step_3000
+    checkpoints/instructft/projector_step_3000.pt    → instructft_step_3000
     """
     p = Path(checkpoint)
     if p.suffix != ".pt":
@@ -93,7 +93,7 @@ def checkpoint_weight_tag(checkpoint: Path | str) -> str:
     if p.stem == "projector":
         return p.parent.name
     if p.stem.startswith("projector_"):
-        return f"{p.parent.name}_{p.stem}"
+        return f"{p.parent.name}_{p.stem[len('projector_'):]}"
     return f"{p.parent.name}_{p.stem}"
 
 

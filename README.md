@@ -4,21 +4,23 @@ SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训
 
 两阶段：**Align 语义对齐**（COCO-CN 中文描述预热）→ **InstructFT 指令微调**（Qwen3.5 生成的大规模视觉问答）。**推理与 Web 演示请用 InstructFT 权重**；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
 
+![VLM v1 Web 演示](web/demo.png)
+
 ---
 
 ## 整体流程（Step 0 → 8）
 
 
-| 步骤  | 环节         | 内容                                     |
-| --- | ---------- | -------------------------------------- |
-| 0   | 环境         | 安装 conda 环境与 Python 依赖                 |
-| 1   | 数据         | 下载 COCO 图片与 COCO-CN 中文标注               |
-| 2   | vLLM 与模型准备 | 下载各模型权重，启动 Qwen3.5 推理服务                |
+| 步骤  | 环节         | 内容                                            |
+| --- | ---------- | --------------------------------------------- |
+| 0   | 环境         | 安装 conda 环境与 Python 依赖                        |
+| 1   | 数据         | 下载 COCO 图片与 COCO-CN 中文标注                      |
+| 2   | vLLM 与模型准备 | 下载各模型权重，启动 Qwen3.5 推理服务                       |
 | 3   | 训练数据       | 构建 Align 语义对齐与 InstructFT 指令微调问答数据（仓库已附带，可跳过） |
-| 4   | 模型架构       | 定义 SigLIP + Projector + Qwen 组合结构      |
+| 4   | 模型架构       | 定义 SigLIP + Projector + Qwen 组合结构             |
 | 5   | 训练         | 两阶段训练 Projector（Align 语义对齐 → InstructFT 指令微调） |
-| 6   | 命令行测试      | 抽样图片做看图问答冒烟测试                          |
-| 7   | Web 界面     | 浏览器上传图片、在线逐条提问                         |
+| 6   | 命令行测试      | 抽样图片做看图问答冒烟测试                                 |
+| 7   | Web 界面     | 浏览器上传图片、在线逐条提问                                |
 | 8   | 模型评估       | 抽图清单（一次）→ Qwen3.5 出题与裁判，量化 Align / InstructFT |
 
 
@@ -334,10 +336,10 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 ```
 
 
-| 阶段 | 说明 | 数据 | 输出 |
-| --- | --- | --- | --- |
-| Align 语义对齐 | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json` | `checkpoints/semantic_align/projector.pt` |
-| InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答 | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt` |
+| 阶段              | 说明                  | 数据                                   | 输出                                        |
+| --------------- | ------------------- | ------------------------------------ | ----------------------------------------- |
+| Align 语义对齐      | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json`            | `checkpoints/semantic_align/projector.pt` |
+| InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答    | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt`     |
 
 
 日志：`logs/semantic_align/`、`logs/instructft/` 下的 `train.log`、`loss.png`。全量 InstructFT 可后台：
@@ -367,7 +369,7 @@ VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 **5.4GB**
 ## Step 7：Web 界面
 
 ```bash
-conda activate vlm && cd VLM/web
+conda activate vlm && cd web
 python server.py
 ```
 
@@ -402,9 +404,9 @@ python server.py
 **题型与训练阶段对应**
 
 
-| type     | 含义          | 测评目标             |
-| -------- | ----------- | ---------------- |
-| `scene`  | 描述图片主要内容    | **Align** 语义对齐得分 |
+| type     | 含义          | 测评目标                  |
+| -------- | ----------- | --------------------- |
+| `scene`  | 描述图片主要内容    | **Align** 语义对齐得分      |
 | `detail` | 针对图片细节的自拟问答 | **InstructFT** 指令微调得分 |
 
 
@@ -427,6 +429,7 @@ export CUDA_HOME=$CONDA_PREFIX/lib/python3.12/site-packages/nvidia/cu13
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib:$LD_LIBRARY_PATH
 export LIBRARY_PATH=$CUDA_HOME/lib:$LIBRARY_PATH
+ln -sf libcudart.so.13 $CUDA_HOME/lib/libcudart.so
 
 vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
   --max-model-len 2048 \
@@ -440,7 +443,7 @@ python eval/step8_2_vlm_answer.py --checkpoint checkpoints/instructft/projector.
 
 # 重启 vLLM（export 同上，再执行 vllm serve）后 8.3：裁判打分（--force 覆盖上一次的打分）
 python eval/step8_3_judge_scores.py \
-  --input eval/outputs/step8_2_vlm_answers_instructft.json \
+  --input eval/outputs/step8_2_answers_instructft.json \
   --force
 ```
 
@@ -466,7 +469,7 @@ python eval/step8_3_judge_scores.py \
 | 维度        | 说明                  |
 | --------- | ------------------- |
 | 事实正确性     | 答案事实是否与图中完全一致       |
-| 答所问       | 是否正面、直接回答所问问题       |
+| 问题理解      | 是否正面、直接回答所问问题       |
 | 参考答案语义一致  | 与参考答案语义是否等价（允许措辞不同） |
 | 事实忠实（无幻觉） | 是否无图中不存在的信息         |
 | 简洁规范      | 是否简短直接，符合细节问答长度预期   |
