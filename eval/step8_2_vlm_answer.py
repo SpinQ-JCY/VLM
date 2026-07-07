@@ -2,6 +2,7 @@
 Step 8.2：训练好的 VLM v1 逐条回答 Step 8.1 基准问题（每题单独推理一次）。
 
 每条记录带上 type（scene / detail），便于 Step 8.3 分维度汇总 Align 与 InstructFT 得分。
+可选 --lora-dir 加载 InstructFT + LoRA 权重（Step 5b）。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from step8_common import (  # noqa: E402
     save_json,
     step8_2_output_path,
 )
+from models.vlms.VLM_v1_lora import load_for_inference, resolve_lora_dir  # noqa: E402
 from models.vlms.VLM_v1_model import load_VLM_v1, load_VLM_v1_image_processor  # noqa: E402
 
 
@@ -47,6 +49,17 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=STEP8_1_OUTPUT)
     parser.add_argument("--output", type=Path, default=None, help="默认随 --checkpoint 自动加权重后缀")
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
+    parser.add_argument(
+        "--lora-dir",
+        type=Path,
+        default=None,
+        help="LoRA adapter 目录；省略时按 projector 自动匹配（projector_step_5000.pt → lora_step_5000/）",
+    )
+    parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="强制 LoRA 推理（省略 --lora-dir 时仍按 projector 自动匹配 lora 目录）",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--save-every", type=int, default=50)
@@ -54,6 +67,14 @@ def main() -> None:
 
     checkpoint = resolve_project_path(args.checkpoint)
     args.checkpoint = checkpoint
+    lora_dir_arg = resolve_project_path(args.lora_dir) if args.lora_dir else None
+    use_lora = args.lora or lora_dir_arg is not None or checkpoint.parent.name.endswith("_lora")
+    lora_dir = None
+    if use_lora:
+        try:
+            lora_dir = resolve_lora_dir(checkpoint, lora_dir_arg)
+        except FileNotFoundError as e:
+            sys.exit(str(e))
     if args.output is None:
         args.output = step8_2_output_path(checkpoint)
     elif not args.output.is_absolute():
@@ -77,18 +98,25 @@ def main() -> None:
     pending = [it for it in items if it["qa_id"] not in done_ids]
     ckpt_rel = project_rel_path(checkpoint)
     ckpt_tag = checkpoint_weight_tag(checkpoint)
+    lora_rel = project_rel_path(lora_dir) if lora_dir else None
 
     def output_meta() -> dict:
-        return {
+        meta = {
             **bench_meta,
             "checkpoint": str(ckpt_rel),
             "checkpoint_tag": ckpt_tag,
             "max_new_tokens": args.max_new_tokens,
         }
+        if lora_rel:
+            meta["lora_dir"] = str(lora_rel)
+        return meta
 
+    load_desc = f"checkpoint → {ckpt_rel}"
+    if lora_rel:
+        load_desc += f" | lora → {lora_rel}"
     print(
         f"基准 {len(items)} 条 | 已完成 {len(done_ids)} 条 | 待推理 {len(pending)} 条 | "
-        f"checkpoint → {ckpt_rel} | 输出 → {project_rel_path(args.output)}",
+        f"{load_desc} | 输出 → {project_rel_path(args.output)}",
         flush=True,
     )
 
@@ -124,15 +152,21 @@ def main() -> None:
                 }
         results = [by_id[it["qa_id"]] for it in items]
 
-    model, tokenizer = load_VLM_v1(device=args.device)
-    if checkpoint.is_file():
-        model.projector.load_state_dict(
-            torch.load(checkpoint, map_location=args.device, weights_only=True)
-        )
-        print(f"已加载 → {ckpt_rel}", flush=True)
+    if lora_dir:
+        if not checkpoint.is_file():
+            sys.exit(f"projector 不存在 → {checkpoint}")
+        model, tokenizer = load_for_inference(checkpoint, lora_dir, device=args.device)
+        print(f"已加载 LoRA → {ckpt_rel} + {lora_rel}", flush=True)
     else:
-        print(f"警告: checkpoint 不存在 → {checkpoint}", flush=True)
-    model.eval()
+        model, tokenizer = load_VLM_v1(device=args.device)
+        if checkpoint.is_file():
+            model.projector.load_state_dict(
+                torch.load(checkpoint, map_location=args.device, weights_only=True)
+            )
+            print(f"已加载 → {ckpt_rel}", flush=True)
+        else:
+            print(f"警告: checkpoint 不存在 → {checkpoint}", flush=True)
+        model.eval()
     processor = load_VLM_v1_image_processor()
 
     by_id = {r["qa_id"]: r for r in results}

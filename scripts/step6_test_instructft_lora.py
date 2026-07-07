@@ -12,7 +12,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from models.vlms.VLM_v1_lora import load_for_inference  # noqa: E402
+from models.vlms.VLM_v1_lora import load_for_inference, resolve_lora_dir  # noqa: E402
 from models.vlms.VLM_v1_model import load_VLM_v1_image_processor  # noqa: E402
 
 DEFAULT_PROJECTOR = ROOT / "checkpoints/instructft_lora/projector.pt"
@@ -32,10 +32,12 @@ def main():
     parser.add_argument("--max-new-tokens", type=int, default=64)
     args = parser.parse_args()
 
+    projector = (ROOT / args.projector).resolve()
+    lora_dir = resolve_lora_dir(projector, args.lora_dir)
     if not torch.cuda.is_available():
         raise RuntimeError("测试需要 GPU")
 
-    model, tokenizer = load_for_inference(args.projector, args.lora_dir, device="cuda")
+    model, tokenizer = load_for_inference(projector, lora_dir, device="cuda")
     processor = load_VLM_v1_image_processor()
 
     for rel_path in TEST_IMAGES:

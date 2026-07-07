@@ -49,6 +49,36 @@ def load_for_train(
     return model, tokenizer
 
 
+def resolve_lora_dir(projector: Path | str, lora_dir: Path | str | None = None) -> Path:
+    """由 projector 路径推断 LoRA 目录（projector_step_5000.pt → lora_step_5000/）。"""
+    projector = Path(projector)
+    candidates: list[Path] = []
+    if lora_dir is not None:
+        candidates.append(Path(lora_dir))
+    parent = projector.parent
+    if projector.stem == "projector":
+        candidates.append(parent / "lora")
+    elif projector.stem.startswith("projector_step_"):
+        step = projector.stem.removeprefix("projector_step_")
+        candidates.append(parent / f"lora_step_{step}")
+    else:
+        candidates.append(parent / "lora")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.is_dir() and (candidate / "adapter_config.json").is_file():
+            return candidate
+
+    tried = ", ".join(str(p) for p in seen)
+    raise FileNotFoundError(
+        f"找不到 LoRA adapter（需含 adapter_config.json）。projector={projector}，已尝试: {tried}"
+    )
+
+
 def load_for_inference(
     projector: Path | str,
     lora_dir: Path | str,

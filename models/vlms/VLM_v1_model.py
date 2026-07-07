@@ -343,4 +343,3 @@ if __name__ == "__main__":
     # 2. generate（InstructFT 推理）
     answer = model.generate(tokenizer, pixel_values, question, max_new_tokens=64)
     print(f"[2] answer: {answer}")
-    print("OK")
