@@ -2,7 +2,9 @@
 
 视频讲解：[哔哩哔哩 · 本项目完整流程](https://www.bilibili.com/video/BV1ktTy67Eqx)
 
-
+<p align="center">
+  <img src="web/demo.png" alt="VLM v1 Web 演示" width="80%">
+</p>
 
 ---
 
@@ -350,8 +352,10 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 
 上 Align、下 InstructFT，注意两图横纵坐标尺度不同。
 
-  
-
+<p align="center">
+  <img src="logs/semantic_align/loss.png" alt="Align loss" width="80%"><br>
+  <img src="logs/instructft/loss.png" alt="InstructFT loss" width="80%">
+</p>
 
 ### Step 5b：InstructFT + LoRA（可选）
 
@@ -363,7 +367,9 @@ python scripts/step5_train_instructft_lora.py
 
 **训练 loss 曲线**
 
-
+<p align="center">
+  <img src="logs/instructft_lora/loss.png" alt="InstructFT + LoRA loss" width="80%">
+</p>
 
 ---
 
