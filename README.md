@@ -1,6 +1,6 @@
 # VLM v1：自己训练一个视觉语言模型
 
-**视频讲解**：[哔哩哔哩 · 本项目完整流程讲解](https://www.bilibili.com/video/BV1ktTy67Eqx)
+**视频讲解**：[哔哩哔哩 · 本项目完整流程](https://www.bilibili.com/video/BV1ktTy67Eqx)
 
 <p align="center">
   <img src="web/demo.png" alt="VLM v1 Web 演示" width="80%">
