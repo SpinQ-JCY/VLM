@@ -32,14 +32,21 @@
 
 ```
 VLM/
-├── data/qa/                   # 训练问答 JSON
-├── models/vlms/               # VLM 模型定义（Step 4）
-├── models/demo/               # 各组件单独验证（Step 2）
-├── utils/                     # 数据构建、训练日志（Step 3、5）
-├── scripts/                   # 训练与测试（Step 5、6）
-├── web/                       # Web 界面（Step 7）
-├── eval/                      # 模型评估（Step 8）
-├── checkpoints/               # Align / InstructFT 的 projector.pt
+├── data/qa/                              # 训练问答 JSON
+├── models/
+│   ├── vlms/                             # VLM 定义（Step 4，含 LoRA 版）
+│   └── demo/                             # 各组件单独验证（Step 2）
+├── utils/                                # 数据构建、训练日志（Step 3、5）
+├── scripts/                              # 训练与测试（Step 5、6，含 LoRA）
+├── web/                                  # Web 界面（Step 7，含 demo.png）
+├── eval/                                 # 评估脚本（Step 8）
+├── checkpoints/
+│   ├── semantic_align/projector.pt       # Align 权重
+│   └── instructft/projector.pt           # InstructFT 权重
+├── logs/
+│   ├── semantic_align/loss.png           # Align loss 曲线
+│   ├── instructft/loss.png               # InstructFT loss 曲线
+│   └── instructft_lora/loss.png          # LoRA loss 曲线
 └── requirements.txt
 ```
 
@@ -345,6 +352,7 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 | Align 语义对齐      | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json`            | `checkpoints/semantic_align/projector.pt` |
 | InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答    | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt`     |
 
+
 **训练 loss 曲线**
 
 <table>
@@ -363,6 +371,8 @@ mkdir -p logs/instructft
 nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/nohup.out 2>&1 &
 ```
 
+
+
 ### Step 5b：InstructFT + LoRA（可选）
 
 在 Align projector 基础上，用 InstructFT 数据**联合训练 Projector + Qwen attention LoRA**（rank=16，运行时挂 adapter，不 merge）。
@@ -371,10 +381,12 @@ nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/
 python scripts/step5_train_instructft_lora.py
 ```
 
-| 输出 | 路径 |
-| --- | --- |
-| Projector | `checkpoints/instructft_lora/projector.pt` |
-| LoRA adapter | `checkpoints/instructft_lora/lora/` |
+
+| 输出           | 路径                                         |
+| ------------ | ------------------------------------------ |
+| Projector    | `checkpoints/instructft_lora/projector.pt` |
+| LoRA adapter | `checkpoints/instructft_lora/lora/`        |
+
 
 **训练 loss 曲线**
 
@@ -382,9 +394,9 @@ python scripts/step5_train_instructft_lora.py
   <img src="logs/instructft_lora/loss.png" alt="InstructFT + LoRA loss" width="80%">
 </p>
 
-日志：`logs/instructft_lora/` 下的 `train.log`（本地）、`loss.png`（推送参考）。
-
 ---
+
+
 
 ## Step 6：命令行测试
 
@@ -422,7 +434,7 @@ python server.py
 | 环境             | 做法                                                          |
 | -------------- | ----------------------------------------------------------- |
 | 本机 / 公司局域网     | 终端打印 `192.168.x.x:7860`，发给同网同事                              |
-| AutoDL（Docker） | `172.17.x.x` 是容器 IP，**不能**当局域网用；在控制台做 **7860 端口映射**，用平台外链分享 |
+| AutoDL（Docker） | `172.17.x.x` 是容器 IP，**不能**当局域网用 |
 
 
 ---
@@ -517,8 +529,6 @@ python eval/step8_3_judge_scores.py \
 
 
 各维度须为 **0–20 任意整数**（如 7、11、14、17），按实际表现细粒度给分，禁止机械套用 0/10/20 锚点。分档参考：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
-
-Step 8.3 结束后终端与对应 `step8_3_scores_*.json` 的 `meta.summary` 会输出 `semantic_align_scene`、`instructft_detail`、`overall` 均分及各维度均分。
 
 ---
 
