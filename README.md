@@ -1,6 +1,6 @@
 # VLM v1：自己训练一个视觉语言模型
 
-**视频讲解**：[哔哩哔哩 · 本项目完整流程](https://www.bilibili.com/video/BV1ktTy67Eqx)
+视频讲解：[哔哩哔哩 · 本项目完整流程](https://www.bilibili.com/video/BV1ktTy67Eqx)
 
 <p align="center">
   <img src="web/demo.png" alt="VLM v1 Web 演示" width="80%">
@@ -34,19 +34,16 @@
 VLM/
 ├── data/qa/                              # 训练问答 JSON
 ├── models/
-│   ├── vlms/                             # VLM 定义（Step 4，含 LoRA 版）
-│   └── demo/                             # 各组件单独验证（Step 2）
-├── utils/                                # 数据构建、训练日志（Step 3、5）
-├── scripts/                              # 训练与测试（Step 5、6，含 LoRA）
-├── web/                                  # Web 界面（Step 7，含 demo.png）
-├── eval/                                 # 评估脚本（Step 8）
+│   ├── vlms/                             # VLM 定义
+│   └── demo/                             # 各组件单独验证
+├── utils/                                # 数据构建、训练日志
+├── scripts/                              # 训练与测试
+├── web/                                  # Web 界面
+├── eval/                                 # 评估脚本
 ├── checkpoints/
 │   ├── semantic_align/projector.pt       # Align 权重
 │   └── instructft/projector.pt           # InstructFT 权重
-├── logs/
-│   ├── semantic_align/loss.png           # Align loss 曲线
-│   ├── instructft/loss.png               # InstructFT loss 曲线
-│   └── instructft_lora/loss.png          # LoRA loss 曲线
+├── logs/                                 # 训练记录
 └── requirements.txt
 ```
 
@@ -116,7 +113,7 @@ unzip data/COCO2014/raw/train2014.zip -d data/COCO2014
 unzip data/COCO2014/raw/val2014.zip -d data/COCO2014
 ```
 
-本地规模：`train2014` **82,783** 张 · `val2014` **40,504** 张。
+本地规模：`train2014` 82,783 张 · `val2014` 40,504 张。
 
 **1.2 COCO-CN 标注** — [HuggingFace](https://huggingface.co/datasets/AIMClab-RUC/COCO-CN)
 
@@ -220,7 +217,7 @@ python models/demo/siglip2.py
 
 ## Step 3：构建训练数据（可选）
 
-仓库已附带 `data/qa/` 下两份 JSON，**可直接 Step 5 训练**。仅当需要重新生成或修改问法时再跑本节。
+仓库已附带 `data/qa/` 下两份 JSON，可直接 Step 5 训练。仅当需要重新生成或修改问法时再跑本节。
 
 ### 3.1 构建语义对齐训练数据
 
@@ -244,7 +241,7 @@ python utils/step3_build_coco_cn_qa.py
 
 ### 3.2 构建指令微调训练数据
 
-Qwen3.5 **看图**生成：每图 **2 问**（10 种描述问法随机 1 + 自拟细节问），生成`data/qa/coco_train_qa_qwen3.5.json`。
+Qwen3.5 看图生成：每图 2 问（10 种描述问法随机 1 + 自拟细节问），生成 `data/qa/coco_train_qa_qwen3.5.json`。
 
 ```bash
 # 需要提前用vLLM启动qwen3.5-9B
@@ -252,7 +249,7 @@ python utils/step3_generate_qa.py --num-images 10   # 试跑
 python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 ```
 
-生成完成后**停 vLLM**，再训练。
+生成完成后停 vLLM，再训练。
 
 ### 数据对比
 
@@ -271,17 +268,17 @@ python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 
 ## Step 4：架构
 
-SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训练 Projector**。
+SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），只训练 Projector。
 
 
 | 模块        | 模型             | 训练     |
 | --------- | -------------- | ------ |
 | Vision    | SigLIP2-so400m | 冻结     |
-| Projector | 2×MLP          | **训练** |
+| Projector | 2×MLP          | 训练     |
 | LLM       | Qwen3-1.7B     | 冻结     |
 
 
-`<image>` 占位符在序列中展开为 **576** 个视觉 token（384÷16=24 → 24×24 patch），与文本 embedding 拼接后送入 Qwen。训练时 `max_seq_len=704`（576 图 + 128 文本）。
+`<image>` 占位符在序列中展开为 576 个视觉 token（384÷16=24 → 24×24 patch），与文本 embedding 拼接后送入 Qwen。训练时 `max_seq_len=704`（576 图 + 128 文本）。
 
 **数据流举例**（demo 图 + InstructFT 权重实测，B=1）：
 
@@ -332,7 +329,7 @@ prompt（训练时 answer 接在后面，truncate 至 128 token）：
 
 ## Step 5：训练
 
-两阶段：**Align 语义对齐**（COCO-CN 中文描述预热）→ **InstructFT 指令微调**（Qwen3.5 生成的大规模视觉问答）。**推理与 Web 演示请用 InstructFT 权重**；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
+两阶段：Align 语义对齐（COCO-CN 中文描述预热）→ InstructFT 指令微调（Qwen3.5 生成的大规模视觉问答）。推理与 Web 演示请用 InstructFT 权重；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
 
 prompt labels = `-100`，只对 answer 算 loss；`max_seq_len=704`（576 图 + 128 文本）。
 
@@ -355,10 +352,18 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 
 **训练 loss 曲线**
 
+两图横轴均为 Batch，纵轴均为每 100 batch 的平均 loss；因数据量与 loss 尺度不同，坐标范围不一致，不宜横向对比，仅供各阶段内部观察收敛趋势。
+
 <table>
   <tr>
-    <td width="50%" align="center"><b>Align 语义对齐</b></td>
-    <td width="50%" align="center"><b>InstructFT 指令微调</b></td>
+    <td width="50%" align="center">
+      Align 语义对齐<br>
+      <sub>横轴约 0–1.2 万 batch · 纵轴 loss 约 2.5–7.0</sub>
+    </td>
+    <td width="50%" align="center">
+      InstructFT 指令微调<br>
+      <sub>横轴约 0–12 万 batch · 纵轴 loss 约 0.9–3.1</sub>
+    </td>
   </tr>
   <tr>
     <td align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
@@ -375,7 +380,7 @@ nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/
 
 ### Step 5b：InstructFT + LoRA（可选）
 
-在 Align projector 基础上，用 InstructFT 数据**联合训练 Projector + Qwen attention LoRA**（rank=16，运行时挂 adapter，不 merge）。
+在 Align projector 基础上，用 InstructFT 数据联合训练 Projector + Qwen attention LoRA（rank=16，运行时挂 adapter，不 merge）。
 
 ```bash
 python scripts/step5_train_instructft_lora.py
@@ -405,7 +410,7 @@ python scripts/step6_test_vlm_v1.py                                             
 python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/semantic_align/projector.pt  # 对比 Align
 ```
 
-**InstructFT + LoRA**（Step 5b 权重）：
+InstructFT + LoRA（Step 5b 权重）：
 
 ```bash
 python scripts/step6_test_instructft_lora.py \
@@ -413,7 +418,7 @@ python scripts/step6_test_instructft_lora.py \
   --lora-dir checkpoints/instructft_lora/lora
 ```
 
-VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 **5.4GB** 显存；vLLM 占用 GPU 时需先停服务。
+VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 5.4GB 显存；vLLM 占用 GPU 时需先停服务。
 
 ---
 
@@ -426,7 +431,7 @@ conda activate vlm && cd web
 python server.py
 ```
 
-默认 `checkpoints/instructft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。推理显存约 **5.4GB**（同 Step 6）。
+默认 `checkpoints/instructft/projector.pt`，端口 7860。上传图片后逐条提问，无多轮上下文。推理显存约 5.4GB（同 Step 6）。
 
 **访问方式**
 
@@ -434,7 +439,7 @@ python server.py
 | 环境             | 做法                                                          |
 | -------------- | ----------------------------------------------------------- |
 | 本机 / 公司局域网     | 终端打印 `192.168.x.x:7860`，发给同网同事                              |
-| AutoDL（Docker） | `172.17.x.x` 是容器 IP，**不能**当局域网用 |
+| AutoDL（Docker） | `172.17.x.x` 是容器 IP，不能当局域网用 |
 
 
 ---
@@ -443,12 +448,12 @@ python server.py
 
 ## Step 8：模型评估
 
-用 **Qwen3.5-9B** 作出题人与裁判，在验证集上量化 VLM 质量。**图片抽样（8.0）只需运行一次**，写入 `step8_0_images.json`；后续 8.1 / 8.2 / 8.3 均从 JSON 加载，支持断点续跑。
+用 Qwen3.5-9B 作出题人与裁判，在验证集上量化 VLM 质量。图片抽样（8.0）只需运行一次，写入 `step8_0_images.json`；后续 8.1 / 8.2 / 8.3 均从 JSON 加载，支持断点续跑。
 
 
 | 步骤  | 内容                  | 输出                                                   |
 | --- | ------------------- | ---------------------------------------------------- |
-| 8.0 | 随机抽取测评图片（**仅一次**）   | eval/outputs/step8_0_images.json                     |
+| 8.0 | 随机抽取测评图片（仅一次）   | eval/outputs/step8_0_images.json                     |
 | 8.1 | Qwen3.5 看图出题 + 参考答案 | eval/outputs/step8_1_benchmark.json                  |
 | 8.2 | VLM 逐条回答（每题单独推理）    | eval/outputs/step8_2_vlm_answers_{权重名}.json          |
 | 8.3 | Qwen3.5 看图裁判打分      | eval/outputs/step8_3_scores_{权重名}.json（由 8.2 路径自动推导） |
@@ -459,17 +464,17 @@ python server.py
 
 | type     | 含义          | 测评目标                  |
 | -------- | ----------- | --------------------- |
-| `scene`  | 描述图片主要内容    | **Align** 语义对齐得分      |
-| `detail` | 针对图片细节的自拟问答 | **InstructFT** 指令微调得分 |
+| `scene`  | 描述图片主要内容    | Align 语义对齐得分      |
+| `detail` | 针对图片细节的自拟问答 | InstructFT 指令微调得分 |
 
 
-默认从 `val2014` 随机抽 **50** 张写入 8.0 清单，每张 2 题，共 100 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
+默认从 `val2014` 随机抽 50 张写入 8.0 清单，每张 2 题，共 100 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
 
 **前置**
 
 - Step 8.0：仅需本地验证集图片，无需 GPU / vLLM
 - Step 8.1 / 8.3：需 vLLM 服务（同 Step 2）
-- Step 8.2：需 GPU；VLM_v1 单卡推理约 **5.4GB** 显存（bf16、batch=1）；须先停 vLLM 释放显存
+- Step 8.2：需 GPU；VLM_v1 单卡推理约 5.4GB 显存（bf16、batch=1）；须先停 vLLM 释放显存
 
 ```bash
 conda activate vlm
@@ -500,9 +505,9 @@ python eval/step8_3_judge_scores.py \
   --force
 ```
 
-`--gpu-memory-utilization 0.8` 约预留 **5.4GB** 给 Step 8.2 VLM_v1 推理。
+`--gpu-memory-utilization 0.8` 约预留 5.4GB 给 Step 8.2 VLM_v1 推理。
 
-**评分标准**（五维度，每维 **0–20** 分，单题满分 **100**；从严给分）
+**评分标准**（五维度，每维 0–20 分，单题满分 100；从严给分）
 
 **scene（Align 语义对齐）**
 
@@ -528,7 +533,7 @@ python eval/step8_3_judge_scores.py \
 | 简洁规范      | 是否简短直接，符合细节问答长度预期   |
 
 
-各维度须为 **0–20 任意整数**（如 7、11、14、17），按实际表现细粒度给分，禁止机械套用 0/10/20 锚点。分档参考：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
+各维度须为 0–20 任意整数（如 7、11、14、17），按实际表现细粒度给分，禁止机械套用 0/10/20 锚点。分档参考：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
 
 ---
 
