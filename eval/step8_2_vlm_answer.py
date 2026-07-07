@@ -1,7 +1,7 @@
 """
 Step 8.2：训练好的 VLM v1 逐条回答 Step 8.1 基准问题（每题单独推理一次）。
 
-每条记录带上 type（scene / detail），便于 Step 8.3 分维度汇总 align 与 sft 得分。
+每条记录带上 type（scene / detail），便于 Step 8.3 分维度汇总 Align 与 InstructFT 得分。
 """
 
 from __future__ import annotations

@@ -93,7 +93,7 @@ class VLM_v1_Model(nn.Module):
     """
     数据流（单条样本 B=1；训练 max_seq_len=704 = 576 图 + 128 文本）。
 
-    用例（demo 图 + sft 权重实测）：
+    用例（demo 图 + InstructFT 权重实测）：
         question = "请用一句话描述这张图片。"
         answer   = "客厅里，一位女子正在厨房里。"
 
@@ -306,21 +306,24 @@ def load_VLM_v1_image_processor():
 
 
 if __name__ == "__main__":
+    import sys
     from PIL import Image
+
+    sys.path.insert(0, str(ROOT))
 
     device = "cuda"
     if not torch.cuda.is_available():
         raise RuntimeError("测试需要 GPU，请确认 CUDA 可用")
 
-    sft_checkpoint = ROOT / "checkpoints/VLM_v1_sft/projector.pt"
+    instructft_checkpoint = ROOT / "checkpoints/instructft/projector.pt"
     model, tokenizer = load_VLM_v1(device=device)
-    if sft_checkpoint.is_file():
+    if instructft_checkpoint.is_file():
         model.projector.load_state_dict(
-            torch.load(sft_checkpoint, map_location=device, weights_only=True)
+            torch.load(instructft_checkpoint, map_location=device, weights_only=True)
         )
-        print(f"已加载 sft projector → {sft_checkpoint.relative_to(ROOT)}")
+        print(f"已加载 InstructFT projector → {instructft_checkpoint.relative_to(ROOT)}")
     else:
-        print(f"警告: sft checkpoint 不存在 → {sft_checkpoint}")
+        print(f"警告: InstructFT checkpoint 不存在 → {instructft_checkpoint}")
 
     processor = load_VLM_v1_image_processor()
     model.eval()
@@ -337,7 +340,7 @@ if __name__ == "__main__":
         img_tokens = model.encode_images(pixel_values)
     print(f"[1] image tokens shape: {tuple(img_tokens.shape)}")  # (1, 576, 2048)
 
-    # 2. generate（sft 推理）
+    # 2. generate（InstructFT 推理）
     answer = model.generate(tokenizer, pixel_values, question, max_new_tokens=64)
     print(f"[2] answer: {answer}")
     print("OK")

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from models.vlms.VLM_v1_model import load_VLM_v1, load_VLM_v1_image_processor  # noqa: E402
 
-DEFAULT_CHECKPOINT = ROOT / "checkpoints/VLM_v1_sft/projector.pt"
+DEFAULT_CHECKPOINT = ROOT / "checkpoints/instructft/projector.pt"
 
 TEST_QUESTIONS = [
     "请简要描述图片主要内容",
@@ -37,13 +37,14 @@ def main():
         raise RuntimeError("测试需要 GPU")
 
     model, tokenizer = load_VLM_v1(device="cuda")
-    if args.checkpoint.is_file():
+    ckpt = args.checkpoint if args.checkpoint.is_absolute() else ROOT / args.checkpoint
+    if ckpt.is_file():
         model.projector.load_state_dict(
-            torch.load(args.checkpoint, map_location="cuda", weights_only=True)
+            torch.load(ckpt, map_location="cuda", weights_only=True)
         )
-        print(f"已加载 → {args.checkpoint.relative_to(ROOT)}")
+        print(f"已加载 → {ckpt.relative_to(ROOT)}")
     else:
-        print(f"警告: checkpoint 不存在 → {args.checkpoint}")
+        print(f"警告: checkpoint 不存在 → {ckpt}")
 
     model.eval()
     processor = load_VLM_v1_image_processor()

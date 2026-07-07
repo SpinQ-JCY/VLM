@@ -70,5 +70,5 @@ class TrainLogger:
 
 
 def log_dir_for_output(output_dir: Path, root: Path) -> Path:
-    """checkpoints/VLM_v1_align → logs/VLM_v1_align"""
+    """checkpoints/semantic_align → logs/semantic_align"""
     return root / "logs" / output_dir.name

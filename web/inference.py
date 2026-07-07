@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from models.vlms.VLM_v1_model import load_VLM_v1, load_VLM_v1_image_processor  # noqa: E402
 
-DEFAULT_CHECKPOINT = ROOT / "checkpoints/VLM_v1_sft/projector.pt"
+DEFAULT_CHECKPOINT = ROOT / "checkpoints/instructft/projector.pt"
 
 
 class VLM_v1_Predictor:
@@ -29,6 +29,8 @@ class VLM_v1_Predictor:
         self.device = device
         self.max_new_tokens = max_new_tokens
         self.checkpoint = Path(checkpoint)
+        if not self.checkpoint.is_absolute():
+            self.checkpoint = ROOT / self.checkpoint
 
         self.model, self.tokenizer = load_VLM_v1(device=device)
         if self.checkpoint.is_file():

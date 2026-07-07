@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -12,13 +13,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+
 DEFAULT_OUTPUT_DIR = EVAL_DIR / "outputs"
 DEFAULT_VAL_DIR = ROOT / "data" / "COCO2014" / "val2014"
 DEFAULT_VLLM_HOST = "http://localhost:8033"
 DEFAULT_VLLM_MODEL = "models/Qwen3.5-9B"
 
-QA_TYPE_SCENE = "scene"    # 描述主要内容 → 对应 align 语义对齐
-QA_TYPE_DETAIL = "detail"  # 针对性细节问答 → 对应 sft 指令微调
+QA_TYPE_SCENE = "scene"    # 描述主要内容 → Align 语义对齐测评
+QA_TYPE_DETAIL = "detail"  # 针对性细节问答 → InstructFT 指令微调测评
 
 SCENE_QUESTIONS = [
     "请描述图片主要内容",
@@ -47,7 +50,7 @@ SCORE_TOTAL_MAX = SCORE_DIM_MAX * SCORE_DIM_COUNT
 # Step 8 各子步默认输出
 STEP8_0_OUTPUT = DEFAULT_OUTPUT_DIR / "step8_0_images.json"
 STEP8_1_OUTPUT = DEFAULT_OUTPUT_DIR / "step8_1_benchmark.json"
-DEFAULT_CHECKPOINT = ROOT / "checkpoints/VLM_v1_sft/projector.pt"
+DEFAULT_CHECKPOINT = ROOT / "checkpoints/instructft/projector.pt"
 STEP8_2_PREFIX = "step8_2_vlm_answers"
 STEP8_3_PREFIX = "step8_3_scores"
 
@@ -61,7 +64,7 @@ def step8_2_output_path(checkpoint: Path | str) -> Path:
 def step8_3_output_path(step8_2_path: Path | str) -> Path:
     """由 Step 8.2 输出路径推导 Step 8.3 评分结果路径。
 
-    step8_2_vlm_answers_VLM_v1_sft.json → step8_3_scores_VLM_v1_sft.json
+    step8_2_vlm_answers_instructft.json → step8_3_scores_instructft.json
     """
     p = Path(step8_2_path)
     stem = p.stem
@@ -81,8 +84,8 @@ def default_step8_2_output() -> Path:
 def checkpoint_weight_tag(checkpoint: Path | str) -> str:
     """从权重路径提取标签。
 
-    checkpoints/VLM_v1_sft/projector.pt              → VLM_v1_sft
-    checkpoints/VLM_v1_sft/projector_step_3000.pt    → VLM_v1_sft_projector_step_3000
+    checkpoints/instructft/projector.pt              → instructft
+    checkpoints/instructft/projector_step_3000.pt    → instructft_projector_step_3000
     """
     p = Path(checkpoint)
     if p.suffix != ".pt":

@@ -2,7 +2,7 @@
 
 SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训练 Projector**。
 
-两阶段：**align** 用 COCO-CN 中文描述做语义预热 → **sft** 用 Qwen3.5 生成的大规模问答做指令微调。**推理与 Web 演示请用 sft 权重**；align 数据少、问题单一，单独使用效果较差，主要供 sft 初始化。
+两阶段：**Align 语义对齐**（COCO-CN 中文描述预热）→ **InstructFT 指令微调**（Qwen3.5 生成的大规模视觉问答）。**推理与 Web 演示请用 InstructFT 权重**；Align 数据少、问题单一，单独使用效果较差，主要供 InstructFT 初始化。
 
 ---
 
@@ -14,12 +14,12 @@ SigLIP2（视觉）+ Projector（对齐层）+ Qwen3-1.7B（语言），**只训
 | 0   | 环境         | 安装 conda 环境与 Python 依赖                 |
 | 1   | 数据         | 下载 COCO 图片与 COCO-CN 中文标注               |
 | 2   | vLLM 与模型准备 | 下载各模型权重，启动 Qwen3.5 推理服务                |
-| 3   | 训练数据       | 构建对齐与 SFT 问答数据（仓库已附带，可跳过）              |
+| 3   | 训练数据       | 构建 Align 语义对齐与 InstructFT 指令微调问答数据（仓库已附带，可跳过） |
 | 4   | 模型架构       | 定义 SigLIP + Projector + Qwen 组合结构      |
-| 5   | 训练         | 两阶段训练 Projector（align 语义对齐 → sft 指令微调） |
+| 5   | 训练         | 两阶段训练 Projector（Align 语义对齐 → InstructFT 指令微调） |
 | 6   | 命令行测试      | 抽样图片做看图问答冒烟测试                          |
 | 7   | Web 界面     | 浏览器上传图片、在线逐条提问                         |
-| 8   | 模型评估       | 抽图清单（一次）→ Qwen3.5 出题与裁判，量化 align / sft |
+| 8   | 模型评估       | 抽图清单（一次）→ Qwen3.5 出题与裁判，量化 Align / InstructFT |
 
 
 ---
@@ -37,7 +37,7 @@ VLM/
 ├── scripts/                   # 训练与测试（Step 5、6）
 ├── web/                       # Web 界面（Step 7）
 ├── eval/                      # 模型评估（Step 8）
-├── checkpoints/               # align / sft 的 projector.pt
+├── checkpoints/               # Align / InstructFT 的 projector.pt
 └── requirements.txt
 ```
 
@@ -272,7 +272,7 @@ python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 
 `<image>` 占位符在序列中展开为 **576** 个视觉 token（384÷16=24 → 24×24 patch），与文本 embedding 拼接后送入 Qwen。训练时 `max_seq_len=704`（576 图 + 128 文本）。
 
-**数据流举例**（demo 图 + sft 权重实测，B=1）：
+**数据流举例**（demo 图 + InstructFT 权重实测，B=1）：
 
 ```
 question = "请用一句话描述这张图片。"
@@ -326,25 +326,25 @@ prompt labels = `-100`，只对 answer 算 loss；`max_seq_len=704`（576 图 + 
 ```bash
 conda activate vlm
 
-# align
-python scripts/step5_train_vlm_v1.py --phase align
+# Align 语义对齐
+python scripts/step5_train_vlm_v1.py --stage semantic_align
 
-# sft（默认加载 align 的 projector.pt）
-python scripts/step5_train_vlm_v1.py --phase sft
+# InstructFT 指令微调（默认加载 Align 的 projector.pt）
+python scripts/step5_train_vlm_v1.py --stage instructft
 ```
 
 
-| 阶段    | 数据                                   | 输出                                      |
-| ----- | ------------------------------------ | --------------------------------------- |
-| align | `data/qa/coco_cn_qa.json`            | `checkpoints/VLM_v1_align/projector.pt` |
-| sft   | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/VLM_v1_sft/projector.pt`   |
+| 阶段 | 说明 | 数据 | 输出 |
+| --- | --- | --- | --- |
+| Align 语义对齐 | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json` | `checkpoints/semantic_align/projector.pt` |
+| InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答 | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt` |
 
 
-日志：`logs/VLM_v1_<phase>/train.log`、`loss.png`。全量 sft 可后台：
+日志：`logs/semantic_align/`、`logs/instructft/` 下的 `train.log`、`loss.png`。全量 InstructFT 可后台：
 
 ```bash
-mkdir -p logs/VLM_v1_sft
-nohup python scripts/step5_train_vlm_v1.py --phase sft > logs/VLM_v1_sft/nohup.out 2>&1 &
+mkdir -p logs/instructft
+nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/nohup.out 2>&1 &
 ```
 
 ---
@@ -354,8 +354,8 @@ nohup python scripts/step5_train_vlm_v1.py --phase sft > logs/VLM_v1_sft/nohup.o
 ## Step 6：命令行测试
 
 ```bash
-python scripts/step6_test_vlm_v1.py                                                     # 默认 sft
-python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/VLM_v1_align/projector.pt  # 对比 align
+python scripts/step6_test_vlm_v1.py                                                          # 默认 InstructFT
+python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/semantic_align/projector.pt  # 对比 Align
 ```
 
 VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 **5.4GB** 显存；vLLM 占用 GPU 时需先停服务。
@@ -371,7 +371,7 @@ conda activate vlm && cd VLM/web
 python server.py
 ```
 
-默认 `checkpoints/VLM_v1_sft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。推理显存约 **5.4GB**（同 Step 6）。
+默认 `checkpoints/instructft/projector.pt`，端口 **7860**。上传图片后逐条提问，无多轮上下文。推理显存约 **5.4GB**（同 Step 6）。
 
 **访问方式**
 
@@ -404,8 +404,8 @@ python server.py
 
 | type     | 含义          | 测评目标             |
 | -------- | ----------- | ---------------- |
-| `scene`  | 描述图片主要内容    | **align** 语义对齐得分 |
-| `detail` | 针对图片细节的自拟问答 | **sft** 指令微调得分   |
+| `scene`  | 描述图片主要内容    | **Align** 语义对齐得分 |
+| `detail` | 针对图片细节的自拟问答 | **InstructFT** 指令微调得分 |
 
 
 默认从 `val2014` 随机抽 **50** 张写入 8.0 清单，每张 2 题，共 100 条；`--num-images` 可自定义。重抽须 `step8_0_sample_images.py --force` 并删除后续 JSON。
@@ -436,11 +436,11 @@ vllm serve models/Qwen3.5-9B --port 8033 --reasoning-parser qwen3 \
 python eval/step8_1_generate_benchmark.py
 
 # 停 vLLM 后 8.2：VLM 逐条回答
-python eval/step8_2_vlm_answer.py --checkpoint checkpoints/VLM_v1_sft/projector.pt
+python eval/step8_2_vlm_answer.py --checkpoint checkpoints/instructft/projector.pt
 
 # 重启 vLLM（export 同上，再执行 vllm serve）后 8.3：裁判打分（--force 覆盖上一次的打分）
 python eval/step8_3_judge_scores.py \
-  --input eval/outputs/step8_2_vlm_answers_VLM_v1_sft.json \
+  --input eval/outputs/step8_2_vlm_answers_instructft.json \
   --force
 ```
 
@@ -448,7 +448,7 @@ python eval/step8_3_judge_scores.py \
 
 **评分标准**（五维度，每维 **0–20** 分，单题满分 **100**；从严给分）
 
-**scene（align）**
+**scene（Align 语义对齐）**
 
 
 | 维度        | 说明                        |
@@ -460,7 +460,7 @@ python eval/step8_3_judge_scores.py \
 | 表达质量      | 中文是否通顺、描述是否清晰             |
 
 
-**detail（sft）**
+**detail（InstructFT 指令微调）**
 
 
 | 维度        | 说明                  |
@@ -474,7 +474,7 @@ python eval/step8_3_judge_scores.py \
 
 各维度须为 **0–20 任意整数**（如 7、11、14、17），按实际表现细粒度给分，禁止机械套用 0/10/20 锚点。分档参考：18–20 几乎无瑕疵 · 14–17 基本正确 · 10–13 部分正确 · 5–9 大部分错误 · 0–4 完全错误或无关。
 
-Step 8.3 结束后终端与对应 `step8_3_scores_*.json` 的 `meta.summary` 会输出 `align_scene`、`sft_detail`、`overall` 均分及各维度均分。
+Step 8.3 结束后终端与对应 `step8_3_scores_*.json` 的 `meta.summary` 会输出 `semantic_align_scene`、`instructft_detail`、`overall` 均分及各维度均分。
 
 ---
 

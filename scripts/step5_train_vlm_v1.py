@@ -1,8 +1,8 @@
 """
 Step 5：VLM v1 训练（两阶段）
 
-  - align：语义对齐，COCO-CN 中文描述 → 对齐 SigLIP 视觉特征与 Qwen 语义空间
-  - sft：指令微调，多类视觉问答 → 学会按问题类型回答
+  - Align 语义对齐：COCO-CN 中文描述 → 对齐 SigLIP 视觉特征与 Qwen 语义空间
+  - InstructFT 指令微调：多类视觉问答 → 学会按问题类型回答
 
 Loss：因果 LM Cross-Entropy；prompt labels 置 -100，只对 answer 算 loss。
 """
@@ -35,16 +35,21 @@ from utils.step5_train_logger import TrainLogger, log_dir_for_output  # noqa: E4
 NUM_IMAGE_TOKENS = VLM_v1_Config().num_image_tokens
 DEFAULT_MAX_SEQ_LEN = NUM_IMAGE_TOKENS + MAX_TEXT_TOKENS
 
-PHASE_DEFAULTS = {
-    "align": {
+STAGE_LABELS = {
+    "semantic_align": "Align 语义对齐",
+    "instructft": "InstructFT 指令微调",
+}
+
+STAGE_DEFAULTS = {
+    "semantic_align": {
         "qa": "data/qa/coco_cn_qa.json",
-        "output": "checkpoints/VLM_v1_align",
+        "output": "checkpoints/semantic_align",
         "init_checkpoint": None,
     },
-    "sft": {
+    "instructft": {
         "qa": "data/qa/coco_train_qa_qwen3.5.json",
-        "output": "checkpoints/VLM_v1_sft",
-        "init_checkpoint": "checkpoints/VLM_v1_align/projector.pt",
+        "output": "checkpoints/instructft",
+        "init_checkpoint": "checkpoints/semantic_align/projector.pt",
     },
 }
 
@@ -147,11 +152,13 @@ def train(args):
         loader_kwargs["persistent_workers"] = True
     loader = DataLoader(dataset, **loader_kwargs)
 
+    stage_label = STAGE_LABELS[args.stage]
     print(
-        f"阶段: {args.phase} | 数据: {qa_path.relative_to(ROOT)} | 样本数: {len(dataset)} | "
-        f"可训练参数: {sum(p.numel() for p in trainable):,} | "
+        f"阶段: {stage_label} ({args.stage}) | 数据: {qa_path.relative_to(ROOT)} | "
+        f"样本数: {len(dataset)} | 可训练参数: {sum(p.numel() for p in trainable):,} | "
         f"max_seq_len={args.max_seq_len} ({NUM_IMAGE_TOKENS} 图 + {max_text_tokens} 文本) | "
-        f"save_every={args.save_every}"
+        f"save_every={args.save_every}",
+        flush=True,
     )
 
     save_dir = ROOT / args.output
@@ -200,14 +207,21 @@ def train(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Step 5：VLM v1 训练（align / sft）")
-    parser.add_argument("--phase", choices=["align", "sft"], default="align")
-    parser.add_argument("--qa", default=None, help="QA JSON 路径（默认随 --phase 选择）")
-    parser.add_argument("--output", default=None, help="checkpoint 输出目录（默认随 --phase 选择）")
+    parser = argparse.ArgumentParser(
+        description="Step 5：VLM v1 训练（Align 语义对齐 / InstructFT 指令微调）"
+    )
+    parser.add_argument(
+        "--stage",
+        choices=tuple(STAGE_DEFAULTS),
+        default="semantic_align",
+        help="semantic_align=Align 语义对齐；instructft=InstructFT 指令微调",
+    )
+    parser.add_argument("--qa", default=None, help="QA JSON 路径（默认随 --stage 选择）")
+    parser.add_argument("--output", default=None, help="checkpoint 输出目录（默认随 --stage 选择）")
     parser.add_argument(
         "--init-checkpoint",
         default=None,
-        help="训练前加载的 projector 权重；sft 阶段默认对齐阶段 projector.pt",
+        help="训练前加载的 projector 权重；InstructFT 阶段默认 Align 阶段 projector.pt",
     )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=3)
@@ -246,7 +260,7 @@ def main():
     )
     args = parser.parse_args()
 
-    defaults = PHASE_DEFAULTS[args.phase]
+    defaults = STAGE_DEFAULTS[args.stage]
     if args.qa is None:
         args.qa = defaults["qa"]
     if args.output is None:
