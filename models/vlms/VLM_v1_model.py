@@ -209,7 +209,7 @@ class VLM_v1_Model(nn.Module):
             ids = input_ids[i]  # (T_text,)
             pos = self._image_token_pos(ids)
 
-            text_embeds = self.llm.model.embed_tokens(ids)  # (T_text, 2048)
+            text_embeds = self.llm.get_input_embeddings()(ids)  # (T_text, 2048)
             img = image_embeds[i].to(text_embeds.dtype)  # (576, 2048)
             merged_embeds = torch.cat([text_embeds[:pos], img, text_embeds[pos + 1 :]], dim=0)  # (T_seq, 2048)，T_seq=T_text-1+576
             embeds_list.append(merged_embeds)

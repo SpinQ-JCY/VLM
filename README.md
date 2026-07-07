@@ -345,23 +345,60 @@ python scripts/step5_train_vlm_v1.py --stage instructft
 | Align 语义对齐      | COCO-CN 描述对齐视觉与语言空间 | `data/qa/coco_cn_qa.json`            | `checkpoints/semantic_align/projector.pt` |
 | InstructFT 指令微调 | 多类视觉问答，学会按问题类型回答    | `data/qa/coco_train_qa_qwen3.5.json` | `checkpoints/instructft/projector.pt`     |
 
+**训练 loss 曲线**
 
-日志：`logs/semantic_align/`、`logs/instructft/` 下的 `train.log`、`loss.png`。全量 InstructFT 可后台：
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Align 语义对齐</b></td>
+    <td width="50%" align="center"><b>InstructFT 指令微调</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="logs/semantic_align/loss.png" width="95%"></td>
+    <td align="center"><img src="logs/instructft/loss.png" width="95%"></td>
+  </tr>
+</table>
 
 ```bash
 mkdir -p logs/instructft
 nohup python scripts/step5_train_vlm_v1.py --stage instructft > logs/instructft/nohup.out 2>&1 &
 ```
 
+### Step 5b：InstructFT + LoRA（可选）
+
+在 Align projector 基础上，用 InstructFT 数据**联合训练 Projector + Qwen attention LoRA**（rank=16，运行时挂 adapter，不 merge）。
+
+```bash
+python scripts/step5_train_instructft_lora.py
+```
+
+| 输出 | 路径 |
+| --- | --- |
+| Projector | `checkpoints/instructft_lora/projector.pt` |
+| LoRA adapter | `checkpoints/instructft_lora/lora/` |
+
+**训练 loss 曲线**
+
+<p align="center">
+  <img src="logs/instructft_lora/loss.png" alt="InstructFT + LoRA loss" width="80%">
+</p>
+
+日志：`logs/instructft_lora/` 下的 `train.log`（本地）、`loss.png`（推送参考）。
+
 ---
-
-
 
 ## Step 6：命令行测试
 
 ```bash
 python scripts/step6_test_vlm_v1.py                                                          # 默认 InstructFT
 python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/semantic_align/projector.pt  # 对比 Align
+```
+
+**InstructFT + LoRA**（Step 5b 权重）：
+
+```bash
+python scripts/step6_test_instructft_lora.py \
+  --projector checkpoints/instructft_lora/projector.pt \
+  --lora-dir checkpoints/instructft_lora/lora
 ```
 
 VLM_v1 推理（SigLIP2 + Qwen3-1.7B + Projector，bf16）单卡约需 **5.4GB** 显存；vLLM 占用 GPU 时需先停服务。
