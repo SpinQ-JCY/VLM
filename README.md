@@ -249,6 +249,8 @@ python utils/step3_generate_qa.py --num-images 10   # 试跑
 python utils/step3_generate_qa.py --num-images 0    # 全量 train2014
 ```
 
+
+
 ### 数据对比
 
 
@@ -378,7 +380,7 @@ python scripts/step5_train_instructft_lora.py
 ## Step 6：命令行测试
 
 ```bash
-python scripts/step6_test_vlm_v1.py                                                          # 默认 InstructFT
+python scripts/step6_test_vlm_v1.py                                                       # 默认 InstructFT
 python scripts/step6_test_vlm_v1.py --checkpoint checkpoints/semantic_align/projector.pt  # 对比 Align
 python scripts/step6_test_instructft_lora.py \
   --projector checkpoints/instructft_lora/projector_step_5000.pt
@@ -391,6 +393,12 @@ python scripts/step6_test_instructft_lora.py \
 ```bash
 conda activate vlm && cd web
 python server.py
+
+# 指定 InstructFT / Align 权重
+python server.py --checkpoint checkpoints/semantic_align/projector.pt
+
+# InstructFT + LoRA（--lora-dir 可省略，会按 checkpoint 自动匹配）
+python server.py --checkpoint checkpoints/instructft_lora/projector_step_5000.pt
 ```
 
 默认 `checkpoints/instructft/projector.pt`，端口 7860。上传图片后逐条提问，无多轮上下文。推理显存约 5.4GB（同 Step 6）。

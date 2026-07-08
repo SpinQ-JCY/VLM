@@ -84,7 +84,8 @@ def health():
     return {
         "status": "ok",
         "device": _predictor.device_name(),
-        "checkpoint": str(_predictor.checkpoint),
+        "checkpoint": _predictor.checkpoint_rel(),
+        "lora_dir": _predictor.lora_dir_rel(),
         "access_url": ACCESS_URL,
     }
 
@@ -131,16 +132,26 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
+    parser.add_argument(
+        "--lora-dir",
+        type=Path,
+        default=None,
+        help="LoRA adapter 目录；省略时按 --checkpoint 自动匹配 lora/ 或 lora_step_{N}/",
+    )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     args = parser.parse_args()
 
     global _predictor, ACCESS_URL
     _predictor = VLM_v1_Predictor(
         checkpoint=args.checkpoint,
+        lora_dir=args.lora_dir,
         max_new_tokens=args.max_new_tokens,
     )
+    ckpt = _predictor.checkpoint_rel()
+    lora = _predictor.lora_dir_rel()
     ACCESS_URL = f"http://{_lan_ip()}:{args.port}/"
 
+    print(f"权重: {ckpt}" + (f" + {lora}" if lora else ""))
     print(f"内网访问: {ACCESS_URL}")
     print(f"本机访问: http://127.0.0.1:{args.port}/")
     uvicorn.run(app, host=args.host, port=args.port)
